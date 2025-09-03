@@ -241,18 +241,33 @@ def tpose_height_to_skel(motion, tpose, apply_=False):
     return res_motion
 
 
-def motion_normalize_h2s(motion, handle_penetration=True):
-
+# Height-to-Skeleton 정규화
+def motion_normalize_h2s(motion, alternative_map={}, handle_penetration=True):
     tpose = motion.poses[0]
     if handle_penetration:
         skel = motion.skel
         joint_names = [j.name for j in skel.joints]
+
+        # alternative_map 적용
+        if alternative_map != {}:
+            mapped_joint_names = []
+            for joint_name in joint_names:
+                if joint_name in alternative_map:
+                    # print("Mapping joint:", joint_name, "->", alternative_map[joint_name])
+                    mapped_joint_names.append(alternative_map[joint_name])
+                else:
+                    # print("Keeping joint:", joint_name)
+                    mapped_joint_names.append(joint_name)
+            joint_names = mapped_joint_names
+            
+        # check left right toe 
         lt = "LeftToeBase_End" if "LeftToeBase_End" in joint_names else "LeftToe_End"
         rt = "RightToeBase_End" if "RightToeBase_End" in joint_names else "RightToe_End"
         if not (lt in joint_names) or not (rt in joint_names):
             print("handle penetration Err")
             embed()
             exit()
+        # transform
         lty = tpose.get_transform(lt, local=False)[1, 3]
         rty = tpose.get_transform(rt, local=False)[1, 3]
         if (lty + rty) / 2 < 0:

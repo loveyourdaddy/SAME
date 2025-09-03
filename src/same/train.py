@@ -1,3 +1,7 @@
+"""
+python same/train.py --exp "250903_TruebonesZoo"
+"""
+
 import argparse, sys, yaml, gc, shutil
 from tqdm import tqdm
 import numpy as np

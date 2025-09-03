@@ -1,4 +1,10 @@
 import argparse
+import os
+import sys
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
 from utils import tensor_utils
 import numpy as np
 import torch
@@ -44,7 +50,7 @@ def retarget(model, src_batch, tgt_batch, ms_dict, out_rep_cfg, consq_n):
     # src ground truth
     src_motion_list, src_contact_list = gt_recon_motion(src_batch, consq_n)
     # predicted result
-    z, hatD = model(src_batch, tgt_batch)
+    z, hatD = model(src_batch, tgt_batch) # latent, decoded pose
     out_motion_list, out_contact_list = hatD_recon_motion(
         hatD, tgt_batch, out_rep_cfg, ms_dict, consq_n
     )
@@ -138,7 +144,7 @@ if __name__ == "__main__":
 
     viewer = get_default_viewer(argparse.Namespace(imgui=False))
 
-    def retarget_mi(mi):
+    def retarget_mi(mi): # motion index
         R = len(ds.mi_ri_2_fi[mi])
         src_ri, tgt_ri = np.random.randint(0, R, size=2)
         (src_batch, tgt_batch), consq_n = get_mi_src_tgt_all_graph(

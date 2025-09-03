@@ -78,7 +78,7 @@ class PairedDataset(Dataset):
         self.end_frames = []
 
         ## motion set related info
-        self.mi_ri_2_fi = []
+        self.mi_ri_2_fi = [] # motion_index x retarget_index -> file_index
         # mi: semantic motion index (same mi means semantically identical motion)
         # ri: 0<=ri<R, R: number of retargeted motions (including original data)
         # mi_ri_2_fi[mi, ri] = fi
@@ -165,6 +165,10 @@ class PairedDataset(Dataset):
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
 
     def get_mi_ri_fi_graph(self, mi, ri, frame):
+        if type(mi)!=int:
+            mi=int(mi)
+        if type(frame)!=int:
+            frame=int(frame)
         fi = self.mi_ri_2_fi[mi][ri]
         si = self.skel_list[fi]
         pi = self.pose_list[self.start_frames[fi] + frame]
@@ -258,10 +262,10 @@ def PairedGraph_collate_fn(batch, mask_option=[], consq_n=-1, device="cpu"):
     # masking can also be done in dataset's __getitem__, but it is efficient to do at once by batch when collating
     if "src" in mask_option:
         assert consq_n > 0, "to apply mask, must provide consq_n > 0"
-        src_batch.mask = rnd_mask(src_batch, consq_n=consq_n)
+        # src_batch.mask = rnd_mask(src_batch, consq_n=consq_n)
     if "tgt" in mask_option:
         assert consq_n > 0, "to apply mask, must provide consq_n > 0"
-        tgt_batch.mask = rnd_mask(tgt_batch, consq_n=consq_n)
+        # tgt_batch.mask = rnd_mask(tgt_batch, consq_n=consq_n)
 
     return src_batch.to(device), tgt_batch.to(device)
 

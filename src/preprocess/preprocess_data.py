@@ -1,3 +1,8 @@
+"""
+python preprocess/preprocess_data.py --train  --data "TruebonesZoo" --wopair  
+
+'/home/inseo/Github/SAME/src/../data/sample/motion/bvh'
+"""
 import os, argparse, pathlib, torch
 import numpy as np
 
@@ -6,10 +11,27 @@ from fairmotion.data import bvh
 from utils.motion_utils import motion_normalize_h2s
 from conversions.motion_to_graph import motion_2_states
 
+alternative_map = {
+    "ToSpine": "LowerBack",
+    "LHipJoint": "LeftHipJoint",
+    "RHipJoint": "RightHipJoint",
+    "LeftToe": "LeftToeBase",
+    "RightToe": "RightToeBase",
+    "LeftToe_End": "LeftToeBase_End",
+    "RightToe_End": "RightToeBase_End",
+    
+    # Hamster (57 joints)
+    # End-Effectors
+    "Bip01_R_Toe0Nub": "RightToeBase_End",
+    "Bip01_L_Toe0Nub": "LeftToeBase_End",
+    "Bip01_HeadNub": "Head_End", 
+    "Bip01_R_Finger0Nub": "RightHand_End",
+    "Bip01_L_Finger0Nub": "LeftHand_End",
+}
 
 def preprocess_motion(motion, save_path, normalized=False):
     if not normalized:
-        motion, tpose = motion_normalize_h2s(motion, False)  # 0.2~3s
+        motion, tpose = motion_normalize_h2s(motion, alternative_map, False)  # 0.2~3s
 
     skel_state, poses_state = motion_2_states(motion)  # 0.1s
 
@@ -60,6 +82,7 @@ def preprocess_single_data(
     output_pair_path = os.path.join(output_dir_path, "pair.txt")
     valid_cnt = 0
 
+    # bvh to npy 
     all_files_recursive = list(pathlib.Path(input_dir_path).rglob("*"))
     with open(output_pair_path, "a" if append_log else "w") as output_file:
         for filepath in all_files_recursive:
@@ -186,7 +209,7 @@ if __name__ == "__main__":
     if args.wopair:
         preprocess_ftn = preprocess_single_data
     else:
-        preprocess_ftn = preprocess_paired_data
+        preprocess_ftn = preprocess_paired_data # 
 
     preprocess_ftn(in_path, out_path, args.append_log)
 
