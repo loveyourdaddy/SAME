@@ -1,3 +1,7 @@
+"""
+cd src 
+python same/test.py --data_dir "train/motion/processed/" --model_epoch "250903_TruebonesZoo"
+"""
 import argparse
 import os
 import sys
@@ -10,7 +14,7 @@ import numpy as np
 import torch
 from mypath import *
 from same.mymodel import make_load_model
-from same.mydataset import PairedDataset, get_mi_src_tgt_all_graph
+from same.mydataset import PairedDataset, get_mi_src_tgt_all_graph, npz_2_data
 from same.skel_pose_graph import SkelPoseGraph, rnd_mask
 from utils.skel_gen_utils import create_random_skel
 from conversions.graph_to_motion import graph_2_skel
@@ -57,9 +61,13 @@ def retarget(model, src_batch, tgt_batch, ms_dict, out_rep_cfg, consq_n):
 
     # when tgt ground-truth motion is available
     if hasattr(tgt_batch, "q"):
+        # tgt ground truth 있는 경우
+        print("tgt ground truth available")
         tgt_motion_list, tgt_contact_list = gt_recon_motion(tgt_batch, consq_n)
         return src_motion_list[0], tgt_motion_list[0], out_motion_list[0]
     else:
+        # tgt ground truth 없는 경우 (target skeleton만 있는 경우)
+        print("tgt ground truth NOT available")
         tgt_skel = graph_2_skel(tgt_batch, 1)[0]
         tgt_motion = motion_class.Motion(skel=tgt_skel)
         tpose = np.eye(4)[None, ...].repeat(tgt_skel.num_joints(), 0)
@@ -127,9 +135,9 @@ if __name__ == "__main__":
     parser.add_argument("--model_epoch", type=str, default="ckpt0")
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--data_dir", type=str, default="test/motion/processed/")
-    parser.add_argument("--rnd_tgt", type=int, default=1)
-    parser.add_argument("--src_mask", type=int, default=1)
-    parser.add_argument("--tgt_mask", type=int, default=1)
+    parser.add_argument("--rnd_tgt", type=int, default=0)
+    parser.add_argument("--src_mask", type=int, default=0)
+    parser.add_argument("--tgt_mask", type=int, default=0)
 
     args = parser.parse_args()
 
@@ -144,28 +152,23 @@ if __name__ == "__main__":
 
     viewer = get_default_viewer(argparse.Namespace(imgui=False))
 
-    def retarget_mi(mi): # motion index
+    # motion index
+    def retarget_mi(mi):
         R = len(ds.mi_ri_2_fi[mi])
-        src_ri, tgt_ri = np.random.randint(0, R, size=2)
+        src_ri, tgt_ri = np.random.randint(0, R, size=2) # 인덱스 안에서 샘플링 (보통 1개)
+        
+        # TODO: 바꾸기
         (src_batch, tgt_batch), consq_n = get_mi_src_tgt_all_graph(
             dataset=ds, mi=mi, src_ri=src_ri, tgt_ri=tgt_ri, device=args.device
         )
-        # option 1) test with data tgt skeleton
-        # option 2) test with random skeleton
-        if args.rnd_tgt:
-            rnd_tgt_skel = create_random_skel()
-            rnd_tgt_skel_graph = skel_2_graph(rnd_tgt_skel)
-            rnd_tgt_batch = Batch.from_data_list([rnd_tgt_skel_graph] * consq_n).to(
-                device=model.device
-            )
-            tgt_batch = rnd_tgt_batch
-
-        if args.src_mask:
-            src_batch.mask = rnd_mask(src_batch, consq_n=consq_n)
-
-        if args.tgt_mask:
-            tgt_batch.mask = rnd_mask(tgt_batch, consq_n=consq_n)
-
+        
+        # target 바꾸기
+        # 'Leapord', 'Isopetra', 'Ant', 'Alligator', 'Coyote', 'Deer', 'Hamster', 'Mammoth', 'Jaguar', 'Lynx', 'Spider', 'Roach', 'Tricera', 'Scorpion', 'Tyranno', 'Pigeon', 'FireAnt', 'Crab', 'Elephant', 'Bear', 'SpiderG', 'Gazelle', 'Rhino', 'Crow', 'Bat', 'Horse', 'Comodoa', 'Parrot', 'Turtle', 'PolarBearB', 'Raptor3', 'Raptor', 'HermitCrab', 'SandMouse', 'PolarBear', 'Hippopotamus', 'Buffalo'
+        name = "Crow"
+        mi = ds.name2idx[name][0]
+        tgt_skel = ds.skel_list[mi]
+        tgt_batch = Batch.from_data_list([SkelPoseGraph(tgt_skel, None) for _ in range(consq_n)]).to(device=args.device)
+        
         src_motion, tgt_motion, out_motion = retarget(
             model,
             src_batch,
@@ -176,7 +179,8 @@ if __name__ == "__main__":
         )
 
         # update viewer
-        viewer.update_motions([src_motion, tgt_motion, out_motion], 150, linear=True)
+        # viewer.update_motions([src_motion, tgt_motion, out_motion], 150, linear=True)
+        viewer.update_motions([src_motion, out_motion], 150, linear=True)
         viewer.mi = mi
 
     retarget_mi(0)

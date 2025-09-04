@@ -33,6 +33,7 @@ def preprocess_motion(motion, save_path, normalized=False):
     if not normalized:
         motion, tpose = motion_normalize_h2s(motion, alternative_map, False)  # 0.2~3s
 
+    # TODO: Tpose을 불러서 skel_graph을 만들기.
     skel_state, poses_state = motion_2_states(motion)  # 0.1s
 
     lo, go, qb, edges = skel_state

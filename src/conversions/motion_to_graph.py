@@ -67,7 +67,7 @@ def skel_2_state(skel):
 
     return offsets.astype("float32"), global_offsets.astype("float32"), q_bool, edges_np
 
-
+# TODO: Tpose을 불러서 skel_graph을 만들기
 def motion_2_states(motion, exclude_wov=True):
     """
     input: motion

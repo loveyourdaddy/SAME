@@ -13,25 +13,25 @@ from same.skel_pose_graph import SkelPoseGraph, rnd_mask, find_feet
 @dataclass
 class SkelData:
     # [nJ, nDim]
-    lo: torch.Tensor
-    go: torch.Tensor
-    qb: torch.BoolTensor
+    lo: torch.Tensor # local offset
+    go: torch.Tensor # global offset
+    qb: torch.BoolTensor # is quaternion
     # [nE, 2]
-    edge_index: torch.LongTensor
-    edge_feature: torch.LongTensor
+    edge_index: torch.LongTensor # parent-child
+    edge_feature: torch.LongTensor # 속성. e.g. bone length, rot limit, etc.
 
 
 @dataclass
 class PoseData:
     # [nJ, nDim]
-    q: torch.Tensor
-    p: torch.Tensor
-    qv: torch.Tensor
-    pv: torch.Tensor
-    pprev: torch.Tensor
-    c: torch.BoolTensor
+    q: torch.Tensor # rot 
+    p: torch.Tensor # pos
+    qv: torch.Tensor # rot vel
+    pv: torch.Tensor # pos vel
+    pprev: torch.Tensor # prev pos
+    c: torch.BoolTensor # contact
     # [nDim]
-    r: torch.Tensor
+    r: torch.Tensor # root trf
 
 
 def npz_2_data(lo, go, qb, edges, q, p, qv, pv, pprev, c, r):
@@ -76,16 +76,20 @@ class PairedDataset(Dataset):
         self.frame_cnts = []
         self.start_frames = []
         self.end_frames = []
+        self.names = []
+        self.name2idx = {}
 
         ## motion set related info
-        self.mi_ri_2_fi = [] # motion_index x retarget_index -> file_index
+        self.mi_ri_2_fi = [] 
         # mi: semantic motion index (same mi means semantically identical motion)
-        # ri: 0<=ri<R, R: number of retargeted motions (including original data)
+        # ri: 0<=ri<R, 
+        # R: number of retargeted motions (including original data)
         # mi_ri_2_fi[mi, ri] = fi
+        # motion_index x retarget_index -> file_index
 
     def add_data(self, lo, go, qb, edges, q, p, qv, pv, pprev, c, r, filepath, mi):
-
         # new data
+        # skel_data, pose_data_list
         sd, pdl = npz_2_data(lo, go, qb, edges, q, p, qv, pv, pprev, c, r)
 
         self.skel_list.append(sd)
@@ -100,6 +104,12 @@ class PairedDataset(Dataset):
         self.frame_cnts.append(nFrame)
         self.start_frames.append(start)
         self.end_frames.append(end)
+        
+        name = filepath.split("/")[-2]
+        self.names.append(name)
+        if name not in self.name2idx:
+            self.name2idx[name] = []
+        self.name2idx[name].append(fi)
 
         # update pair-related info
         assert len(self.mi_ri_2_fi) >= mi
@@ -131,6 +141,7 @@ class PairedDataset(Dataset):
             bvh_fp = npz_fp  # placeholder
         self.add_data(**data, filepath=bvh_fp, mi=mi)
 
+    # load 
     def load_data_dir_pairs(self, data_dir):
         pair_path = os.path.join(data_dir, "pair.txt")
         assert os.path.exists(pair_path), pair_path + " does not exist"
@@ -184,6 +195,7 @@ class PairedDataset(Dataset):
         assert src_ri >= 0 and src_ri < len(self.mi_ri_2_fi[mi])
         assert tgt_ri >= 0 and tgt_ri < len(self.mi_ri_2_fi[mi])
         frame_cnt = self.frame_cnts[self.mi_ri_2_fi[mi][0]]
+        # 모든 프레임에 대해서 (src graph, tgt_graph)
         batch = [self[mi, src_ri, tgt_ri, frame] for frame in range(frame_cnt)]
         return batch, frame_cnt
 
@@ -291,5 +303,6 @@ def get_paired_data_loader(data_dir, batch_size, consq_n, shuffle, mask_option, 
 
 
 def get_mi_src_tgt_all_graph(dataset, mi, src_ri, tgt_ri, device):
+    # all_batch_idx: 모든 프레임에 대해서 (src SkelPoseGraph, tgt SkelPoseGraph)
     all_batch_idx, consq_n = dataset.get_mi_src_tgt_all(mi, src_ri, tgt_ri)
     return PairedGraph_collate_fn(all_batch_idx, device=device), consq_n
