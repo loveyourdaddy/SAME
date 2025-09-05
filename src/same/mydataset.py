@@ -90,8 +90,15 @@ class PairedDataset(Dataset):
         # Tpose 
         self.tpose_dir = "../data/train/motion/processed/" # "../data/train/character/bvh"
         self.tpose_cache = {}  # T-pose 캐싱
-        
+        self.character_joint_counts = {}  # 캐릭터별 조인트 개수 캐싱
+
+    # add data 
     def add_data(self, lo, go, qb, edges, q, p, qv, pv, pprev, c, r, filepath, mi):
+        # 조인트 개수 검증
+        if not self.validate_joint_compatibility(lo, filepath):
+            print(f"Skipping data due to joint count mismatch: {filepath}")
+            return False
+            
         # new data
         # skel_data, pose_data_list
         sd, pdl = npz_2_data(lo, go, qb, edges, q, p, qv, pv, pprev, c, r)
@@ -144,9 +151,8 @@ class PairedDataset(Dataset):
         if bvh_fp is None:
             bvh_fp = npz_fp  # placeholder
 
-        self.add_data(**data, filepath=bvh_fp, mi=mi)         # data: lo, go, qb, edges, q, p, qv, pv, pprev, c, r,
+        self.add_data(**data, filepath=bvh_fp, mi=mi) # data: lo, go, qb, edges, q, p, qv, pv, pprev, c, r,
 
-    # load 
     def load_data_dir_pairs(self, data_dir):
         pair_path = os.path.join(data_dir, "pair.txt")
         assert os.path.exists(pair_path), pair_path + " does not exist"
@@ -180,6 +186,7 @@ class PairedDataset(Dataset):
                     )
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
 
+    # load data 
     def get_mi_ri_fi_graph(self, mi, ri, frame):
         fi = self.mi_ri_2_fi[mi][ri]
         si = self.skel_list[fi]
@@ -188,14 +195,14 @@ class PairedDataset(Dataset):
 
     def get_mi_ri_fi_graph_with_tpose(self, mi, ri, frame):
         """T-pose가 포함된 그래프 반환"""
-            
+        
         # 원본 그래프 가져오기
         original_graph = self.get_mi_ri_fi_graph(mi, ri, frame)
         # skel. edges
         
         # 첫 번째 프레임이 아니면 원본 반환 (모션의 길이가 0)
         if frame != 0:
-            print(">>> zero frame")
+            # print(">>> zero frame")
             return original_graph
             
         # 첫 번째 프레임인 경우 T-pose로 교체
@@ -216,7 +223,7 @@ class PairedDataset(Dataset):
             mi=int(mi)
         if type(frame)!=int:
             frame=int(frame)
-        print(f"{mi} {src_ri} {tgt_ri} {frame}")
+        # print(f"{mi} {src_ri} {tgt_ri} {frame}")
         
         src_graph = self.get_mi_ri_fi_graph_with_tpose(mi, src_ri, frame)
         tgt_graph = self.get_mi_ri_fi_graph_with_tpose(mi, tgt_ri, frame)
@@ -276,28 +283,67 @@ class PairedDataset(Dataset):
         return tpose_data
 
     def create_tpose_graph(self, character_name, reference_skel):
-        """T-pose SkelPoseGraph 생성"""
+        # T-pose SkelPoseGraph 생성
         tpose_data = self.load_tpose_bvh(character_name)
         if tpose_data is None:
             return None
         
         # T-pose pose 데이터로 SkelPoseGraph 생성
         _, tpose_pose_list = npz_2_data(
-            tpose_data['lo'],  # 같은 skeleton 사용
+            # skel
+            tpose_data['lo'],
             tpose_data['go'],
             tpose_data['qb'],
-            tpose_data['edges'], # edge_index edges
+            tpose_data['edges'],
+            # pose
             tpose_data['q'],
             tpose_data['p'],
-            tpose_data.get('qv', np.zeros_like(tpose_data['q'])),
-            tpose_data.get('pv', np.zeros_like(tpose_data['p'])),
-            tpose_data.get('pprev', tpose_data['p']),  # 첫 프레임이므로 같은 값
-            tpose_data.get('c', np.zeros((1, reference_skel.lo.shape[0]))),
-            tpose_data.get('r', np.zeros((1, reference_skel.lo.shape[0]))),
+            tpose_data['qv'],
+            tpose_data['pv'],
+            tpose_data.get('pprev', tpose_data['p']), # tpose_data['pprev']
+            tpose_data['c'],
+            tpose_data['r'],
         )
+        # print(">>> T-pose loaded for", character_name)
+        # if character_name == "Alligator":
+        #     import pdb; pdb.set_trace()
+        # print(reference_skel)
+        # print(tpose_pose_list[0])
 
         return SkelPoseGraph(reference_skel, tpose_pose_list[0])
 
+    # check validation: T-pose와 조인트 개수 일치 여부
+    def validate_joint_compatibility(self, lo, filepath):
+        """모션 데이터의 조인트 개수가 T-pose와 일치하는지 확인"""
+        character_name = self.extract_character_name(filepath)
+        expected_joint_count = self.get_character_joint_count(character_name)
+        
+        if expected_joint_count is None:
+            print(f"Warning: Could not get T-pose joint count for {character_name}, skipping validation")
+            return False  # T-pose가 없으면 제거
+            
+        actual_joint_count = lo.shape[0]
+        
+        if actual_joint_count != expected_joint_count:
+            print(f"Joint count mismatch for {character_name}: motion has {actual_joint_count}, T-pose has {expected_joint_count}")
+            return False
+            
+        return True
+
+    def get_character_joint_count(self, character_name):
+        """캐릭터의 T-pose에서 조인트 개수를 가져옴"""
+        if character_name in self.character_joint_counts:
+            return self.character_joint_counts[character_name]
+            
+        tpose_file = os.path.join(self.tpose_dir, character_name, "__TPOSE.npz")
+        if not os.path.exists(tpose_file):
+            print(f"Warning: T-pose file not found for {character_name}: {tpose_file}")
+            return None
+        
+        tpose_data = np.load(tpose_file)
+        joint_count = tpose_data['lo'].shape[0]  # 조인트 개수
+        self.character_joint_counts[character_name] = joint_count
+        return joint_count
 
 class PairConsqSampler(Sampler):
     def __init__(self, dataset, batch_size, consq_n, shuffle):
@@ -384,6 +430,8 @@ def PairedGraph_collate_fn(batch, mask_option=[], consq_n=-1, device="cpu"):
 def get_paired_data_loader(data_dir, batch_size, consq_n, shuffle, mask_option, device):
     ds = PairedDataset()
     ds.load_data_dir_pairs(data_dir)
+    print(f"dataset: {len(ds.name2idx.keys())}")
+
     sampler = PairConsqSampler(
         ds, batch_size=batch_size, consq_n=consq_n, shuffle=shuffle
     )
