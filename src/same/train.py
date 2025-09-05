@@ -1,5 +1,5 @@
 """
-python same/train.py --exp "250903_TruebonesZoo"
+python same/train.py --exp "250904_TruebonesZoo"
 """
 
 import argparse, sys, yaml, gc, shutil
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         data_dir,
         train_cfg["batch_size"],
         train_cfg["consq_n"],
-        shuffle=True,
+        shuffle=False, # True
         mask_option=cfg["train_data"]["mask"],
         device=args.device,
     )
