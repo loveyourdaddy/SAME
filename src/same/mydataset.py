@@ -35,6 +35,7 @@ class PoseData:
 
 
 def npz_2_data(lo, go, qb, edges, q, p, qv, pv, pprev, c, r):
+    # import pdb; pdb.set_trace()
     if not (np.arange(edges.shape[0]) == edges[:, 1]).all():
         edges = edges[np.argsort(edges[:, 1])]  # sort by child idx - just in case ...
 
@@ -82,7 +83,11 @@ class PairedDataset(Dataset):
         # mi: semantic motion index (same mi means semantically identical motion)
         # ri: 0<=ri<R, R: number of retargeted motions (including original data)
         # mi_ri_2_fi[mi, ri] = fi
-
+        
+        # Tpose 
+        self.tpose_dir = "../data/train/motion/processed/" # "../data/train/character/bvh"
+        self.tpose_cache = {}  # T-pose 캐싱
+        
     def add_data(self, lo, go, qb, edges, q, p, qv, pv, pprev, c, r, filepath, mi):
 
         # new data
@@ -129,6 +134,7 @@ class PairedDataset(Dataset):
         data = np.load(npz_fp)
         if bvh_fp is None:
             bvh_fp = npz_fp  # placeholder
+        import pdb; pdb.set_trace() # data edge
         self.add_data(**data, filepath=bvh_fp, mi=mi)
 
     def load_data_dir_pairs(self, data_dir):
@@ -165,19 +171,47 @@ class PairedDataset(Dataset):
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
 
     def get_mi_ri_fi_graph(self, mi, ri, frame):
+        fi = self.mi_ri_2_fi[mi][ri]
+        si = self.skel_list[fi]
+        pi = self.pose_list[self.start_frames[fi] + frame]
+        # import pdb; pdb.set_trace()
+        return SkelPoseGraph(si, pi)
+
+    def get_mi_ri_fi_graph_with_tpose(self, mi, ri, frame):
+        """T-pose가 포함된 그래프 반환"""
+            
+        # 원본 그래프 가져오기
+        # import pdb; pdb.set_trace()
+        original_graph = self.get_mi_ri_fi_graph(mi, ri, frame)
+        # skel. edges
+        
+        # 첫 번째 프레임이 아니면 원본 반환 (모션의 길이가 0)
+        if frame != 0:
+            print(">>> zero frame")
+            return original_graph
+            
+        # 첫 번째 프레임인 경우 T-pose로 교체
+        fi = self.mi_ri_2_fi[mi][ri]
+        filepath = self.filepaths[fi]
+        character_name = self.extract_character_name(filepath)
+
+        tpose_graph = self.create_tpose_graph(character_name, original_graph)
+        if tpose_graph is not None:
+            return tpose_graph
+        else:
+            print(f">>> Failed to load T-pose for {character_name}, using original frame")
+            return original_graph
+
+    def __getitem__(self, idx):
+        mi, src_ri, tgt_ri, frame = idx
         if type(mi)!=int:
             mi=int(mi)
         if type(frame)!=int:
             frame=int(frame)
-        fi = self.mi_ri_2_fi[mi][ri]
-        si = self.skel_list[fi]
-        pi = self.pose_list[self.start_frames[fi] + frame]
-        return SkelPoseGraph(si, pi)
-
-    def __getitem__(self, idx):
-        mi, src_ri, tgt_ri, frame = idx
-        src_graph = self.get_mi_ri_fi_graph(mi, src_ri, frame)
-        tgt_graph = self.get_mi_ri_fi_graph(mi, tgt_ri, frame)
+        print(f"{mi} {src_ri} {tgt_ri} {frame}")
+        
+        src_graph = self.get_mi_ri_fi_graph_with_tpose(mi, src_ri, frame)
+        tgt_graph = self.get_mi_ri_fi_graph_with_tpose(mi, tgt_ri, frame)
         return src_graph, tgt_graph
 
     def get_mi_src_tgt_all(self, mi, src_ri, tgt_ri):
@@ -186,6 +220,75 @@ class PairedDataset(Dataset):
         frame_cnt = self.frame_cnts[self.mi_ri_2_fi[mi][0]]
         batch = [self[mi, src_ri, tgt_ri, frame] for frame in range(frame_cnt)]
         return batch, frame_cnt
+
+    # added 
+    def extract_character_name(self, filepath):
+        """파일 경로에서 캐릭터 이름 추출"""
+        character_name = filepath.split('/')[-2]
+        return character_name
+
+    def load_tpose_bvh(self, character_name):
+        """캐릭터별 T-pose BVH 파일 로드"""
+        if character_name in self.tpose_cache:
+            return self.tpose_cache[character_name]
+            
+        tpose_file = os.path.join(self.tpose_dir, character_name, "__TPOSE.npz")
+        if not os.path.exists(tpose_file):
+            print(f"Warning: T-pose file not found for {character_name}: {tpose_file}")
+            return None
+            
+        # BVH 파일을 NPZ 형태로 변환 (기존 전처리 파이프라인 사용)
+
+        # 실제 BVH -> NPZ 변환 로직 호출
+        # 이 부분은 프로젝트의 BVH 처리 함수에 맞게 수정 필요
+        tpose_data = self.process_tpose_bvh(tpose_file)
+        self.tpose_cache[character_name] = tpose_data
+        return tpose_data
+
+    def process_tpose_bvh(self, bvh_filepath):
+        # TODO: tpose 로드를 npz가 아니라 bvh로. 
+        """BVH 파일을 처리하여 첫 번째 프레임의 pose 데이터 반환"""
+        # 이 함수는 프로젝트의 BVH 처리 파이프라인에 맞게 구현해야 함
+        # 예시: BVH -> NPZ 변환 후 첫 프레임 추출
+        
+        # 임시로 NPZ 파일이 있는지 확인
+        npz_path = bvh_filepath.replace('.bvh', '.npz')
+        # if os.path.exists(npz_path):
+        data = np.load(npz_path)
+        # 첫 번째 프레임의 데이터만 추출
+        tpose_data = {
+            'q': data['q'][0:1],  # 첫 프레임만
+            'p': data['p'][0:1],
+            'qv': data['qv'][0:1] if 'qv' in data else None,
+            'pv': data['pv'][0:1] if 'pv' in data else None,
+            'c': data['c'][0:1] if 'c' in data else None,
+            'r': data['r'][0:1] if 'r' in data else None,
+        }
+        return tpose_data
+
+    def create_tpose_graph(self, character_name, reference_skel):
+        """T-pose SkelPoseGraph 생성"""
+        tpose_data = self.load_tpose_bvh(character_name)
+        if tpose_data is None:
+            return None
+        
+        # T-pose pose 데이터로 SkelPoseGraph 생성
+        import pdb; pdb.set_trace()
+        _, tpose_pose_list = npz_2_data(
+            reference_skel.lo,  # 같은 skeleton 사용
+            reference_skel.go,
+            reference_skel.qb,
+            reference_skel.edge_feature, # edge_index edges
+            tpose_data['q'],
+            tpose_data['p'],
+            tpose_data.get('qv', np.zeros_like(tpose_data['q'])),
+            tpose_data.get('pv', np.zeros_like(tpose_data['p'])),
+            tpose_data.get('pprev', tpose_data['p']),  # 첫 프레임이므로 같은 값
+            tpose_data.get('c', np.zeros((1, reference_skel.lo.shape[0]))),
+            tpose_data.get('r', np.zeros((1, reference_skel.lo.shape[0]))),
+        )
+
+        return SkelPoseGraph(reference_skel, tpose_pose_list[0])
 
 
 class PairConsqSampler(Sampler):
