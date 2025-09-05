@@ -109,8 +109,22 @@ venv.bak/
 .vscode/
 .idea/
 
-data/
+# data/
 result/
 src/imgui.ini
 video/**/*
 all_data.tar.xz
+
+*.bvh
+*.npz
+*.lab
+*.pkl
+*.fbm
+*.fbx
+*.pt
+*.jpg
+*.JPG
+*.csv
+*.db
+*.tga
+*.DAE
