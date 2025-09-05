@@ -35,7 +35,6 @@ class PoseData:
 
 
 def npz_2_data(lo, go, qb, edges, q, p, qv, pv, pprev, c, r):
-    # import pdb; pdb.set_trace()
     if not (np.arange(edges.shape[0]) == edges[:, 1]).all():
         edges = edges[np.argsort(edges[:, 1])]  # sort by child idx - just in case ...
 
@@ -144,8 +143,8 @@ class PairedDataset(Dataset):
         data = np.load(npz_fp)
         if bvh_fp is None:
             bvh_fp = npz_fp  # placeholder
-        import pdb; pdb.set_trace() # data edge
-        self.add_data(**data, filepath=bvh_fp, mi=mi)
+
+        self.add_data(**data, filepath=bvh_fp, mi=mi)         # data: lo, go, qb, edges, q, p, qv, pv, pprev, c, r,
 
     # load 
     def load_data_dir_pairs(self, data_dir):
@@ -185,14 +184,12 @@ class PairedDataset(Dataset):
         fi = self.mi_ri_2_fi[mi][ri]
         si = self.skel_list[fi]
         pi = self.pose_list[self.start_frames[fi] + frame]
-        # import pdb; pdb.set_trace()
         return SkelPoseGraph(si, pi)
 
     def get_mi_ri_fi_graph_with_tpose(self, mi, ri, frame):
         """T-pose가 포함된 그래프 반환"""
             
         # 원본 그래프 가져오기
-        # import pdb; pdb.set_trace()
         original_graph = self.get_mi_ri_fi_graph(mi, ri, frame)
         # skel. edges
         
@@ -250,9 +247,6 @@ class PairedDataset(Dataset):
             return None
             
         # BVH 파일을 NPZ 형태로 변환 (기존 전처리 파이프라인 사용)
-
-        # 실제 BVH -> NPZ 변환 로직 호출
-        # 이 부분은 프로젝트의 BVH 처리 함수에 맞게 수정 필요
         tpose_data = self.process_tpose_bvh(tpose_file)
         self.tpose_cache[character_name] = tpose_data
         return tpose_data
@@ -260,15 +254,18 @@ class PairedDataset(Dataset):
     def process_tpose_bvh(self, bvh_filepath):
         # TODO: tpose 로드를 npz가 아니라 bvh로. 
         """BVH 파일을 처리하여 첫 번째 프레임의 pose 데이터 반환"""
-        # 이 함수는 프로젝트의 BVH 처리 파이프라인에 맞게 구현해야 함
-        # 예시: BVH -> NPZ 변환 후 첫 프레임 추출
         
-        # 임시로 NPZ 파일이 있는지 확인
+        # NPZ 파일이 있는지 확인
         npz_path = bvh_filepath.replace('.bvh', '.npz')
-        # if os.path.exists(npz_path):
         data = np.load(npz_path)
-        # 첫 번째 프레임의 데이터만 추출
+        
+        # 첫 번째 프레임의 데이터만 추출 # pose data 
         tpose_data = {
+            'lo': data['lo'],
+            'go': data['go'],
+            'qb': data['qb'],
+            'edges': data['edges'],
+            
             'q': data['q'][0:1],  # 첫 프레임만
             'p': data['p'][0:1],
             'qv': data['qv'][0:1] if 'qv' in data else None,
@@ -285,12 +282,11 @@ class PairedDataset(Dataset):
             return None
         
         # T-pose pose 데이터로 SkelPoseGraph 생성
-        import pdb; pdb.set_trace()
         _, tpose_pose_list = npz_2_data(
-            reference_skel.lo,  # 같은 skeleton 사용
-            reference_skel.go,
-            reference_skel.qb,
-            reference_skel.edge_feature, # edge_index edges
+            tpose_data['lo'],  # 같은 skeleton 사용
+            tpose_data['go'],
+            tpose_data['qb'],
+            tpose_data['edges'], # edge_index edges
             tpose_data['q'],
             tpose_data['p'],
             tpose_data.get('qv', np.zeros_like(tpose_data['q'])),
