@@ -1,6 +1,6 @@
 """
 cd src 
-python same/test.py --data_dir "train/motion/processed/" --model_epoch "250903_TruebonesZoo"
+python same/test.py --data_dir "train/motion/processed/" --model_epoch "250904_TruebonesZoo"
 """
 import argparse
 import os
@@ -164,7 +164,7 @@ if __name__ == "__main__":
         
         # target 바꾸기
         # 'Leapord', 'Isopetra', 'Ant', 'Alligator', 'Coyote', 'Deer', 'Hamster', 'Mammoth', 'Jaguar', 'Lynx', 'Spider', 'Roach', 'Tricera', 'Scorpion', 'Tyranno', 'Pigeon', 'FireAnt', 'Crab', 'Elephant', 'Bear', 'SpiderG', 'Gazelle', 'Rhino', 'Crow', 'Bat', 'Horse', 'Comodoa', 'Parrot', 'Turtle', 'PolarBearB', 'Raptor3', 'Raptor', 'HermitCrab', 'SandMouse', 'PolarBear', 'Hippopotamus', 'Buffalo'
-        name = "Crow"
+        name = "Leapord" # Crow
         mi = ds.name2idx[name][0]
         tgt_skel = ds.skel_list[mi]
         tgt_batch = Batch.from_data_list([SkelPoseGraph(tgt_skel, None) for _ in range(consq_n)]).to(device=args.device)

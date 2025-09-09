@@ -96,7 +96,6 @@ class PairedDataset(Dataset):
     def add_data(self, lo, go, qb, edges, q, p, qv, pv, pprev, c, r, filepath, mi):
         # 조인트 개수 검증
         if not self.validate_joint_compatibility(lo, filepath):
-            print(f"Skipping data due to joint count mismatch: {filepath}")
             return False
             
         # new data
