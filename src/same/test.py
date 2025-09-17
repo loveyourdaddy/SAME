@@ -1,6 +1,6 @@
 """
 cd src 
-python same/test.py --data_dir "train/motion/processed/" --model_epoch "250904_TruebonesZoo"
+python same/test.py --data_dir "train/motion/processed/" --model_epoch "250917_TruebonesZoo"
 """
 import argparse
 import os
@@ -53,6 +53,7 @@ from torch_geometric.data import Batch
 def retarget(model, src_batch, tgt_batch, ms_dict, out_rep_cfg, consq_n):
     # src ground truth
     src_motion_list, src_contact_list = gt_recon_motion(src_batch, consq_n)
+    
     # predicted result
     z, hatD = model(src_batch, tgt_batch) # latent, decoded pose
     out_motion_list, out_contact_list = hatD_recon_motion(

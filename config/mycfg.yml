@@ -51,12 +51,12 @@ train:
     p: 0.01
     r: 10
     pv: 1
-    c: 1
-    cv: 6
+    c:  0 # 1
+    cv: 0 # 6
     z: 1
     pen: 0.1
     slide: 6
-    jerk: 0.2
+    jerk: 0 # 0.2
 
   metric: [qR, ra_xz, pa, slide, jerk, pen] 
 
