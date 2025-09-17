@@ -1,5 +1,5 @@
 """
-python same/train.py --exp "250904_TruebonesZoo"
+python same/train.py --exp "250917_TruebonesZoo"
 python same/train.py --exp "250909_SAME"
 
 """
