@@ -1,4 +1,6 @@
 """
+Extract character's joint global position at its T-pose. (data/[DATA_NAME]/character/bvh/.)
+
 python preprocess/skel_list.py --data "TruebonesZoo"
 # example) python preprocess/skel_list.py --data sample
 """

@@ -128,3 +128,6 @@ all_data.tar.xz
 *.db
 *.tga
 *.DAE
+
+data/TruebonesZoo/
+data/_old

@@ -1,10 +1,12 @@
 """
-python preprocess/preprocess_data.py --train  --data "TruebonesZoo" --wopair  
+Process a paired motion dataset(.bvh files) to .npz files.
+    python preprocess/preprocess_data.py --train  --data "train" --wopair  
 
 '/home/inseo/Github/SAME/src/../data/sample/motion/bvh'
 """
 import os, argparse, pathlib, torch
 import numpy as np
+import copy 
 
 from mypath import *
 from fairmotion.data import bvh
@@ -29,12 +31,103 @@ alternative_map = {
     "Bip01_L_Finger0Nub": "LeftHand_End",
 }
 
-def preprocess_motion(motion, save_path, normalized=False):
+# Append Tpose
+def create_tpose_frame(motion):
+    """
+    Create T-pose frame from the motion's skeleton structure.
+    Returns a motion object with a single T-pose frame.
+    """
+    # T-pose는 보통 모든 조인트를 기본 rotation(identity)으로 설정
+    # 첫 번째 프레임을 기반으로 T-pose 생성
+    tpose_motion = copy.deepcopy(motion) # .copy()
+    
+    # 모든 프레임을 1개로 줄이고 T-pose로 설정
+    tpose_motion.poses = [copy.deepcopy(motion.poses[0])] # .copy() 첫 번째 프레임을 복사
+    
+    # 모든 조인트의 rotation을 identity로 설정 (T-pose)
+    for jid, joint_name in enumerate(tpose_motion.skel.joints):
+        joint = tpose_motion.skel.joints[jid]
+        if joint != motion.skel.root_joint:  # root joint는 제외
+            # Identity quaternion [1, 0, 0, 0] 또는 Euler [0, 0, 0]
+            tpose_motion.poses[0].data[jid, :] = 0.0
+    
+    return tpose_motion
+
+
+def save_tpose_separately(motion, character_name, output_dir_path):
+    """
+    Save T-pose as a separate file for the character.
+    """
+    # T-pose 생성
+    tpose_motion = create_tpose_frame(motion)
+    
+    # T-pose를 skeleton state와 pose state로 변환
+    skel_state, poses_state = motion_2_states(tpose_motion)
+    lo, go, qb, edges = skel_state
+    q, p, r, pv, qv, pprev, c = poses_state
+    
+    # T-pose 저장 경로 설정
+    tpose_dir = os.path.join(output_dir_path, character_name)
+    if not os.path.exists(tpose_dir):
+        os.makedirs(tpose_dir)
+    
+    tpose_save_path = os.path.join(tpose_dir, "__TPOSE.npz")
+    
+    # T-pose 저장
+    np.savez_compressed(
+        tpose_save_path,
+        lo=lo,
+        go=go,
+        qb=qb,
+        edges=edges,
+        q=q,
+        p=p,
+        r=r,
+        pv=pv,
+        qv=qv,
+        pprev=pprev,
+        c=c,
+    )
+    
+    print(f"T-pose saved for {character_name}: {tpose_save_path}")
+    return tpose_save_path
+
+
+def prepend_tpose_to_motion(motion, tpose_motion):
+    """
+    Prepend T-pose frame to the beginning of the motion.
+    """
+    # 원본 모션에 T-pose를 첫 번째 프레임으로 추가
+    combined_motion = copy.deepcopy(motion) # .copy()
+    
+    # T-pose 프레임을 맨 앞에 추가
+    tpose_frame = tpose_motion.poses[0]
+    combined_motion.poses = [tpose_frame] + combined_motion.poses
+    
+    return combined_motion
+# end 
+
+def preprocess_motion(motion, save_path, normalized=False, add_tpose=True):
     if not normalized:
         motion, tpose = motion_normalize_h2s(motion, alternative_map, False)  # 0.2~3s
-
-    # TODO: Tpose을 불러서 skel_graph을 만들기.
-    skel_state, poses_state = motion_2_states(motion)  # 0.1s
+    
+    if add_tpose:
+        # 캐릭터 이름 추출 (파일 경로에서)
+        character_name = os.path.basename(os.path.dirname(save_path))
+        output_dir_path = os.path.dirname(os.path.dirname(save_path))
+        
+        # T-pose 생성 및 별도 저장
+        tpose_motion = create_tpose_frame(motion)
+        tpose_save_path = save_tpose_separately(tpose_motion, character_name, output_dir_path)
+        
+        # 원본 모션에 T-pose를 첫 번째 프레임으로 추가
+        motion_with_tpose = prepend_tpose_to_motion(motion, tpose_motion)
+        
+        # T-pose가 포함된 모션을 처리
+        skel_state, poses_state = motion_2_states(motion_with_tpose)
+    else:
+        # 기존 방식: T-pose 없이 처리
+        skel_state, poses_state = motion_2_states(motion)
 
     lo, go, qb, edges = skel_state
     # In [4]: for ss in skel_state: print(ss.shape)
@@ -71,6 +164,7 @@ def preprocess_motion(motion, save_path, normalized=False):
         pprev=pprev,
         c=c,
     )
+    print("saved at ", save_path)
 
 
 def preprocess_single_data(
@@ -102,7 +196,6 @@ def preprocess_single_data(
 
                 outpaths = [relpath_npz, relpath_npz]
                 output_file.write("\t".join(outpaths) + "\n")
-
 
 def preprocess_paired_data(
     input_dir_path,
