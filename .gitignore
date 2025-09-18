@@ -132,3 +132,5 @@ all_data.tar.xz
 data/TruebonesZoo/
 data/_old
 _data_backup/
+data/train_old/
+data/train/

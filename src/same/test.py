@@ -1,6 +1,6 @@
 """
 cd src 
-python same/test.py --data_dir "train/motion/processed/" --model_epoch "250917_TruebonesZoo"
+python same/test.py --data_dir "train/motion/processed/" --model_epoch "250918_TruebonesZoo_scaled"
 """
 import argparse
 import os
@@ -139,6 +139,8 @@ if __name__ == "__main__":
     parser.add_argument("--rnd_tgt", type=int, default=0)
     parser.add_argument("--src_mask", type=int, default=0)
     parser.add_argument("--tgt_mask", type=int, default=0)
+    parser.add_argument("--unit_scale", type=float, default=100, 
+                       help="Scale factor for unit conversion (100 for m to cm)")
 
     args = parser.parse_args()
 
@@ -148,6 +150,11 @@ if __name__ == "__main__":
     ds = PairedDataset()
     data_dir = os.path.join(DATA_DIR, args.data_dir)
     ds.load_data_dir_pairs(data_dir)
+
+    # Scale all skeletons in dataset
+    for skel in ds.skel_list:
+        skel.go *= args.unit_scale
+        skel.lo *= args.unit_scale
 
     from default_veiwer import get_default_viewer
 
@@ -163,9 +170,10 @@ if __name__ == "__main__":
             dataset=ds, mi=mi, src_ri=src_ri, tgt_ri=tgt_ri, device=args.device
         )
         
-        # target 바꾸기
+        # target
         # 'Leapord', 'Isopetra', 'Ant', 'Alligator', 'Coyote', 'Deer', 'Hamster', 'Mammoth', 'Jaguar', 'Lynx', 'Spider', 'Roach', 'Tricera', 'Scorpion', 'Tyranno', 'Pigeon', 'FireAnt', 'Crab', 'Elephant', 'Bear', 'SpiderG', 'Gazelle', 'Rhino', 'Crow', 'Bat', 'Horse', 'Comodoa', 'Parrot', 'Turtle', 'PolarBearB', 'Raptor3', 'Raptor', 'HermitCrab', 'SandMouse', 'PolarBear', 'Hippopotamus', 'Buffalo'
-        name = "Leapord" # Crow
+        # 'Eagle', 'Crow', 'Bear', 'Crocodile', 'KingCobra', 'Alligator', 'Jaguar', 'Pirrana', 'Buffalo', 'Spider', 'Parrot2', 'Cat', 'Bat', 'Ostrich', 'Comodoa', 'Elephant', 'Dog', 'PolarBear', 'Gazelle', 'Camel', 'Dragon', 'Raptor3', 'Bird', 'Fox', 'Isopetra', 'Anaconda', 'Scorpion-2', 'Trex', 'Deer', 'Giantbee', 'Coyote', 'Cricket', 'Horse', 'Roach', 'Raptor', 'Flamingo', 'Skunk', 'Puppy', 'Raindeer', 'Tyranno', 'Ant', 'Monkey', 'Crab', 'Goat', 'Turtle', 'Tukan', 'Dog-2', 'Rhino', 'PolarBearB', 'Buzzard', 'FireAnt', 'Leapord', 'Scorpion', 'SpiderG', 'Hippopotamus', 'Pigeon', 'Stego', 'Mammoth', 'Chicken', 'Raptor2', 'HermitCrab', 'SandMouse', 'Parrot', 'Tricera', 'BrownBear', 'Hound', 'Lynx'
+        name = "Eagle" 
         mi = ds.name2idx[name][0]
         tgt_skel = ds.skel_list[mi]
         tgt_batch = Batch.from_data_list([SkelPoseGraph(tgt_skel, None) for _ in range(consq_n)]).to(device=args.device)
@@ -178,6 +186,7 @@ if __name__ == "__main__":
             out_rep_cfg=cfg["representation"]["out"],
             consq_n=consq_n,
         )
+        # breakpoint()
 
         # update viewer
         # viewer.update_motions([src_motion, tgt_motion, out_motion], 150, linear=True)

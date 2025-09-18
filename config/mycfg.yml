@@ -4,8 +4,8 @@ train_data:
 
 representation:
   skel: [lo, go] # S
-  pose: [q, p, r, pv, qv, pprev, c] # D_t
-  out: [r, q, c] # \hat{D_t}
+  pose: [q, p, r, pv, qv, pprev] # D_t , c
+  out: [r, q] # \hat{D_t} , c
 
 model:
   z_dim: 32
@@ -56,7 +56,7 @@ train:
     z: 1
     pen: 0.1
     slide: 6
-    jerk: 0 # 0.2
+    jerk: 0.2
 
   metric: [qR, ra_xz, pa, slide, jerk, pen] 
 

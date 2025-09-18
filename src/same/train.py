@@ -1,5 +1,5 @@
 """
-python same/train.py --exp "250917_TruebonesZoo"
+python same/train.py --exp "250918_TruebonesZoo_scaled"
 python same/train.py --exp "250909_SAME"
 
 """
@@ -167,8 +167,12 @@ if __name__ == "__main__":
 
             ## log
             for k, v in loss.items():
+                if len(dl)==0:
+                    continue
                 epoch_loss[k] += tensor_utils.cdn(v)
             for k, v in metric.items():
+                if len(dl)==0:
+                    continue
                 epoch_metric[k] += tensor_utils.cdn(v)
 
             del src_batch, tgt_batch, out, loss, metric

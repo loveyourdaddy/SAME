@@ -192,30 +192,6 @@ class PairedDataset(Dataset):
         pi = self.pose_list[self.start_frames[fi] + frame]
         return SkelPoseGraph(si, pi)
 
-    # def get_mi_ri_fi_graph_with_tpose(self, mi, ri, frame):
-    #     """T-pose가 포함된 그래프 반환"""
-        
-    #     # 원본 그래프 가져오기
-    #     original_graph = self.get_mi_ri_fi_graph(mi, ri, frame)
-    #     # skel. edges
-        
-    #     # 첫 번째 프레임이 아니면 원본 반환 (모션의 길이가 0)
-    #     if frame != 0:
-    #         # print(">>> zero frame")
-    #         return original_graph
-            
-    #     # 첫 번째 프레임인 경우 T-pose로 교체
-    #     fi = self.mi_ri_2_fi[mi][ri]
-    #     filepath = self.filepaths[fi]
-    #     character_name = self.extract_character_name(filepath)
-
-    #     tpose_graph = self.create_tpose_graph(character_name, original_graph)
-    #     if tpose_graph is not None:
-    #         return tpose_graph
-    #     else:
-    #         print(f">>> Failed to load T-pose for {character_name}, using original frame")
-    #         return original_graph
-
     def __getitem__(self, idx):
         mi, src_ri, tgt_ri, frame = idx
         if type(mi)!=int:
@@ -242,77 +218,6 @@ class PairedDataset(Dataset):
         character_name = filepath.split('/')[-2]
         return character_name
 
-    # def load_tpose_bvh(self, character_name):
-    #     """캐릭터별 T-pose BVH 파일 로드"""
-    #     if character_name in self.tpose_cache:
-    #         return self.tpose_cache[character_name]
-            
-    #     tpose_file = os.path.join(self.tpose_dir, character_name, "__TPOSE.npz")
-    #     if not os.path.exists(tpose_file):
-    #         print(f"Warning: T-pose file not found for {character_name}: {tpose_file}")
-    #         return None
-            
-    #     # BVH 파일을 NPZ 형태로 변환 (기존 전처리 파이프라인 사용)
-    #     tpose_data = self.process_tpose_bvh(tpose_file)
-    #     self.tpose_cache[character_name] = tpose_data
-    #     return tpose_data
-
-    # def process_tpose_bvh(self, bvh_filepath):
-    #     # TODO: tpose 로드를 npz가 아니라 bvh로. 
-    #     """BVH 파일을 처리하여 첫 번째 프레임의 pose 데이터 반환"""
-        
-    #     # NPZ 파일이 있는지 확인
-    #     npz_path = bvh_filepath.replace('.bvh', '.npz')
-    #     data = np.load(npz_path)
-        
-    #     # 첫 번째 프레임의 데이터만 추출 # pose data 
-    #     tpose_data = {
-    #         'lo': data['lo'],
-    #         'go': data['go'],
-    #         'qb': data['qb'],
-    #         'edges': data['edges'],
-            
-    #         'q': data['q'][0:1],  # 첫 프레임만
-    #         'p': data['p'][0:1],
-    #         'qv': data['qv'][0:1] if 'qv' in data else None,
-    #         'pv': data['pv'][0:1] if 'pv' in data else None,
-    #         'c': data['c'][0:1] if 'c' in data else None,
-    #         'r': data['r'][0:1] if 'r' in data else None,
-    #     }
-    #     return tpose_data
-
-    # def create_tpose_graph(self, character_name, reference_skel):
-    #     # T-pose SkelPoseGraph 생성
-    #     tpose_data = self.load_tpose_bvh(character_name)
-    #     if tpose_data is None:
-    #         return None
-        
-    #     # breakpoint()
-    #     # T-pose pose 데이터로 SkelPoseGraph 생성
-    #     _, tpose_pose_list = npz_2_data(
-    #         # skel
-    #         tpose_data['lo'],
-    #         tpose_data['go'],
-    #         tpose_data['qb'],
-    #         tpose_data['edges'],
-    #         # pose
-    #         tpose_data['q'],
-    #         tpose_data['p'],
-    #         tpose_data['qv'],
-    #         tpose_data['pv'],
-    #         tpose_data.get('pprev', tpose_data['p']), # tpose_data['pprev']
-    #         tpose_data['c'],
-    #         tpose_data['r'],
-    #     )
-    #     # print(">>> T-pose loaded for", character_name)
-    #     # if character_name == "Alligator":
-    #     #     import pdb; pdb.set_trace()
-    #     # print(reference_skel)
-    #     # print(tpose_pose_list[0])
-
-    #     breakpoint()
-    #     return SkelPoseGraph(reference_skel, tpose_pose_list[0])
-
     # check validation: T-pose와 조인트 개수 일치 여부
     def validate_joint_compatibility(self, lo, filepath):
         """모션 데이터의 조인트 개수가 T-pose와 일치하는지 확인"""
@@ -326,7 +231,7 @@ class PairedDataset(Dataset):
         actual_joint_count = lo.shape[0]
         
         if actual_joint_count != expected_joint_count:
-            print(f"Joint count mismatch for {character_name}: motion has {actual_joint_count}, T-pose has {expected_joint_count}")
+            print(f"Joint count mismatch for {character_name}: motion {filepath} has {actual_joint_count}, T-pose has {expected_joint_count}")
             return False
             
         return True

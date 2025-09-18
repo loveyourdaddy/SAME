@@ -107,9 +107,14 @@ def prepend_tpose_to_motion(motion, tpose_motion):
     return combined_motion
 # end 
 
-def preprocess_motion(motion, save_path, normalized=False, add_tpose=True):
+def preprocess_motion(motion, save_path, normalized=False, add_tpose=True, scale_factor=100):
     if not normalized:
         motion, tpose = motion_normalize_h2s(motion, alternative_map, False)  # 0.2~3s
+    
+    # Apply unit scaling before processing
+    if scale_factor != 1.0:
+        motion = apply_unit_scaling(motion, scale_factor)
+        print(f"Applied unit scaling factor: {scale_factor}")
     
     if add_tpose:
         # 캐릭터 이름 추출 (파일 경로에서)
@@ -128,6 +133,9 @@ def preprocess_motion(motion, save_path, normalized=False, add_tpose=True):
     else:
         # 기존 방식: T-pose 없이 처리
         skel_state, poses_state = motion_2_states(motion)
+
+    # Additional scaling for processed data (double scaling prevention check)
+    # skel_state, poses_state = scale_processed_data(skel_state, poses_state, scale_factor)
 
     lo, go, qb, edges = skel_state
     # In [4]: for ss in skel_state: print(ss.shape)
@@ -171,6 +179,7 @@ def preprocess_single_data(
     input_dir_path,
     output_dir_path,
     append_log=False,
+    scale_factor=100,
 ):
     if not os.path.exists(output_dir_path):
         os.makedirs(output_dir_path)
@@ -192,7 +201,9 @@ def preprocess_single_data(
                 valid_cnt += 1
 
                 motion = bvh.load(filepath, ignore_root_skel=True, ee_as_joint=True)
-                preprocess_motion(motion, out_save_full_path, normalized=False)
+                # preprocess_motion(motion, out_save_full_path, normalized=False)
+                preprocess_motion(motion, out_save_full_path, normalized=False, 
+                                add_tpose=True, scale_factor=scale_factor)
 
                 outpaths = [relpath_npz, relpath_npz]
                 output_file.write("\t".join(outpaths) + "\n")
@@ -289,21 +300,104 @@ def compute_statistics(
     print("saved statistics(mean/std) of", len(rel_paths), "files into", ms_dict_path)
 
 
+def apply_unit_scaling(motion, scale_factor=100):
+    """
+    Apply unit scaling to motion data (m to cm by default).
+    Scales position data but keeps rotation data unchanged.
+    """
+    if scale_factor == 1.0:
+        return motion
+    
+    print(f"Applying unit scaling with factor: {scale_factor}")
+    
+    # Scale skeleton positions
+    for joint in motion.skel.joints:
+        # Scale joint positions (local offsets)
+        if hasattr(joint, 'offset') and joint.offset is not None:
+            joint.offset = joint.offset * scale_factor
+        
+        # Scale transformation matrices if they exist
+        if hasattr(joint, 'xform_from_parent_joint') and joint.xform_from_parent_joint is not None:
+            # Only scale translation part (last column, first 3 rows)
+            joint.xform_from_parent_joint[:3, 3] *= scale_factor
+        
+        if hasattr(joint, 'xform_global') and joint.xform_global is not None:
+            # Only scale translation part
+            joint.xform_global[:3, 3] *= scale_factor
+    
+    # Scale pose data (root translations)
+    for pose in motion.poses:
+        if hasattr(pose, 'data') and pose.data is not None:
+            # Typically, root joint (index 0) contains translation
+            # Other joints contain rotation data which should not be scaled
+            root_translation_indices = slice(0, 3)  # Usually first 3 values are root translation
+            pose.data[0, root_translation_indices] *= scale_factor
+        
+        # If pose has transformation matrices
+        elif hasattr(pose, 'transform') and pose.transform is not None:
+            pose.transform[:3, 3] *= scale_factor
+    
+    return motion
+
+# def scale_processed_data(skel_state, poses_state, scale_factor=100):
+#     """
+#     Scale the processed data arrays for unit conversion.
+#     """
+#     if scale_factor == 1.0:
+#         return skel_state, poses_state
+    
+#     lo, go, qb, edges = skel_state
+#     q, p, r, pv, qv, pprev, c = poses_state
+    
+#     # Scale position-related data
+#     lo_scaled = lo * scale_factor  # local offsets
+#     go_scaled = go * scale_factor  # global positions
+#     p_scaled = p * scale_factor    # positions
+#     pv_scaled = pv * scale_factor  # position velocities
+#     pprev_scaled = pprev * scale_factor  # previous positions
+    
+#     # Root position in 'r' might also need scaling
+#     r_scaled = r.copy()
+#     if r.shape[-1] >= 3:  # If r contains position data
+#         r_scaled[..., :3] *= scale_factor
+    
+#     # Quaternion data (q, qv) and contact data (c) don't need scaling
+#     # Boolean data (qb) and edge data (edges) don't need scaling
+    
+#     skel_state_scaled = (lo_scaled, go_scaled, qb, edges)
+#     poses_state_scaled = (q, p_scaled, r_scaled, pv_scaled, qv, pprev_scaled, c)
+    
+#     return skel_state_scaled, poses_state_scaled
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, default="sample")
     parser.add_argument("--train", action="store_true")
     parser.add_argument("--wopair", action="store_true")
     parser.add_argument("--append_log", action="store_true")
+    parser.add_argument("--unit_scale", type=float, default=100, 
+                       help="Scale factor for unit conversion (100 for m to cm, 1 for no scaling)")
     args = parser.parse_args()
 
     in_path = os.path.join(DATA_DIR, args.data, "motion", "bvh")
-    out_path = os.path.join(DATA_DIR, args.data, "motion", "processed")
+    
+    # Add scale suffix to output directory if scaling is applied
+    if args.unit_scale != 1.0:
+        out_path = os.path.join(DATA_DIR, args.data, "motion", "processed")
+        # out_path = os.path.join(DATA_DIR, args.data, "motion", f"processed_scaled_{int(args.unit_scale)}")
+        print(f"Using scaled output directory: {out_path}")
+    else:
+        out_path = os.path.join(DATA_DIR, args.data, "motion", "processed")
 
     if args.wopair:
-        preprocess_ftn = preprocess_single_data
+        preprocess_ftn = lambda inp, outp, append: preprocess_single_data(inp, outp, append, args.unit_scale)
     else:
-        preprocess_ftn = preprocess_paired_data # 
+        preprocess_ftn = lambda inp, outp, append: preprocess_paired_data(inp, outp, append, args.unit_scale)
+
+    # if args.wopair:
+    #     preprocess_ftn = preprocess_single_data
+    # else:
+    #     preprocess_ftn = preprocess_paired_data # 
 
     preprocess_ftn(in_path, out_path, args.append_log)
 
