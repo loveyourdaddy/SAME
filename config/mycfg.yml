@@ -5,7 +5,7 @@ train_data:
 representation:
   skel: [lo, go] # S
   pose: [q, p, r, pv, qv, pprev] # D_t , c
-  out: [r, q] # \hat{D_t} , c
+  out: [r, q, c] # \hat{D_t}
 
 model:
   z_dim: 32
