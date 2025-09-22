@@ -129,5 +129,6 @@ all_data.tar.xz
 *.tga
 *.DAE
 
-data/
+# data/
 _data_backup/
+src/preprocess/
