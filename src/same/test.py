@@ -1,6 +1,8 @@
 """
 cd src 
-python same/test.py --data_dir "train/motion/processed/" --model_epoch "250918_TruebonesZoo_scaled"
+python same/test.py --data_dir "train/motion/processed/" --model_epoch "250922_TruebonesZoo_scaled"
+python same/test.py --data_dir "TruebonesZoo_processed_by_JH/motion/processed/" --model_epoch "250921_TruebonesZoo_scaled"
+
 """
 import argparse
 import os
@@ -130,6 +132,40 @@ def save_bvh_z(model_epoch, bvh_dir, npy_dir):
         gc.collect()
         torch.cuda.empty_cache()
 
+# Scale all motion
+from fairmotion.ops import math, conversions
+def scale_motion(motion, unit_scale=100):
+    """
+    Scale motion from meters to centimeters
+    - Scale skeleton offsets by unit_scale (100x)
+    - Scale root positions by unit_scale
+    """
+    # Scale skeleton offsets
+    for joint in motion.skel.joints:
+        if joint.parent_joint is not None:  # Skip root joint for offset scaling
+            joint.xform_from_parent_joint[:3, 3] *= unit_scale
+            # Update global transforms after changing offsets
+            joint.xform_global = np.dot(
+                joint.parent_joint.xform_global, 
+                joint.xform_from_parent_joint
+            )
+            # Update child joints recursively
+            joint.set_xform_global_recursive(joint.xform_global)
+            
+            # Update body_T if it exists
+            if hasattr(joint, 'body_T'):
+                mid_p = 0.5 * joint.xform_from_parent_joint[:3, 3]
+                z_dir_R = math.R_from_vectors(np.array([0, 0, 1]), mid_p)
+                joint.body_T = conversions.Rp2T(z_dir_R, mid_p)
+    
+    # Scale root positions in all poses
+    root_joint_idx = 0  # Assuming root is at index 0
+    for pose in motion.poses:
+        # Scale root position (translation part)
+        pose.data[root_joint_idx][:3, 3] *= unit_scale
+    
+    return motion
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -151,30 +187,32 @@ if __name__ == "__main__":
     data_dir = os.path.join(DATA_DIR, args.data_dir)
     ds.load_data_dir_pairs(data_dir)
 
-    # Scale all skeletons in dataset
-    for skel in ds.skel_list:
-        skel.go *= args.unit_scale
-        skel.lo *= args.unit_scale
-
     from default_veiwer import get_default_viewer
 
     viewer = get_default_viewer(argparse.Namespace(imgui=False))
 
     # motion index
     def retarget_mi(mi):
+        # intra retareting 
+        # 'Leapord', 'Isopetra', 'Ant', 'Alligator', 'Coyote', 'Deer', 'Hamster', 'Mammoth', 'Jaguar', 'Lynx', 'Spider', 'Roach', 'Tricera', 'Scorpion', 'Tyranno', 'Pigeon', 'FireAnt', 'Crab', 'Elephant', 'Bear', 'SpiderG', 'Gazelle', 'Rhino', 'Crow', 'Bat', 'Horse', 'Comodoa', 'Parrot', 'Turtle', 'PolarBearB', 'Raptor3', 'Raptor', 'HermitCrab', 'SandMouse', 'PolarBear', 'Hippopotamus', 'Buffalo'
+        # 'Eagle', 'Crow', 'Bear', 'Crocodile', 'KingCobra', 'Alligator', 'Jaguar', 'Pirrana', 'Buffalo', 'Spider', 'Parrot2', 'Cat', 'Bat', 'Ostrich', 'Comodoa', 'Elephant', 'Dog', 'PolarBear', 'Gazelle', 'Camel', 'Dragon', 'Raptor3', 'Bird', 'Fox', 'Isopetra', 'Anaconda', 'Scorpion-2', 'Trex', 'Deer', 'Giantbee', 'Coyote', 'Cricket', 'Horse', 'Roach', 'Raptor', 'Flamingo', 'Skunk', 'Puppy', 'Raindeer', 'Tyranno', 'Ant', 'Monkey', 'Crab', 'Goat', 'Turtle', 'Tukan', 'Dog-2', 'Rhino', 'PolarBearB', 'Buzzard', 'FireAnt', 'Leapord', 'Scorpion', 'SpiderG', 'Hippopotamus', 'Pigeon', 'Stego', 'Mammoth', 'Chicken', 'Raptor2', 'HermitCrab', 'SandMouse', 'Parrot', 'Tricera', 'BrownBear', 'Hound', 'Lynx'
+        name = "Crocodile" 
+        mi_in_specices = 0
+        mi = ds.name2idx[name][mi_in_specices]
+        motion_name = ds.name2motion[name][mi_in_specices]
+        print("mi:", mi, motion_name) #, ds.idx2name[mi]
+        breakpoint()
+        
+        # src
         R = len(ds.mi_ri_2_fi[mi])
         src_ri, tgt_ri = np.random.randint(0, R, size=2) # 인덱스 안에서 샘플링 (보통 1개)
         
-        # TODO: 바꾸기
+        # load data 
         (src_batch, tgt_batch), consq_n = get_mi_src_tgt_all_graph(
             dataset=ds, mi=mi, src_ri=src_ri, tgt_ri=tgt_ri, device=args.device
         )
         
         # target
-        # 'Leapord', 'Isopetra', 'Ant', 'Alligator', 'Coyote', 'Deer', 'Hamster', 'Mammoth', 'Jaguar', 'Lynx', 'Spider', 'Roach', 'Tricera', 'Scorpion', 'Tyranno', 'Pigeon', 'FireAnt', 'Crab', 'Elephant', 'Bear', 'SpiderG', 'Gazelle', 'Rhino', 'Crow', 'Bat', 'Horse', 'Comodoa', 'Parrot', 'Turtle', 'PolarBearB', 'Raptor3', 'Raptor', 'HermitCrab', 'SandMouse', 'PolarBear', 'Hippopotamus', 'Buffalo'
-        # 'Eagle', 'Crow', 'Bear', 'Crocodile', 'KingCobra', 'Alligator', 'Jaguar', 'Pirrana', 'Buffalo', 'Spider', 'Parrot2', 'Cat', 'Bat', 'Ostrich', 'Comodoa', 'Elephant', 'Dog', 'PolarBear', 'Gazelle', 'Camel', 'Dragon', 'Raptor3', 'Bird', 'Fox', 'Isopetra', 'Anaconda', 'Scorpion-2', 'Trex', 'Deer', 'Giantbee', 'Coyote', 'Cricket', 'Horse', 'Roach', 'Raptor', 'Flamingo', 'Skunk', 'Puppy', 'Raindeer', 'Tyranno', 'Ant', 'Monkey', 'Crab', 'Goat', 'Turtle', 'Tukan', 'Dog-2', 'Rhino', 'PolarBearB', 'Buzzard', 'FireAnt', 'Leapord', 'Scorpion', 'SpiderG', 'Hippopotamus', 'Pigeon', 'Stego', 'Mammoth', 'Chicken', 'Raptor2', 'HermitCrab', 'SandMouse', 'Parrot', 'Tricera', 'BrownBear', 'Hound', 'Lynx'
-        name = "Eagle" 
-        mi = ds.name2idx[name][0]
         tgt_skel = ds.skel_list[mi]
         tgt_batch = Batch.from_data_list([SkelPoseGraph(tgt_skel, None) for _ in range(consq_n)]).to(device=args.device)
         
@@ -186,7 +224,12 @@ if __name__ == "__main__":
             out_rep_cfg=cfg["representation"]["out"],
             consq_n=consq_n,
         )
-        # breakpoint()
+        
+        # Scale all motion
+        src_motion = scale_motion(src_motion, args.unit_scale)
+        # if hasattr(tgt_motion, 'poses'):  # Check if it's a full motion with poses
+        tgt_motion = scale_motion(tgt_motion, args.unit_scale)
+        out_motion = scale_motion(out_motion, args.unit_scale)
 
         # update viewer
         # viewer.update_motions([src_motion, tgt_motion, out_motion], 150, linear=True)
