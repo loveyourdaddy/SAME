@@ -77,7 +77,8 @@ class PairedDataset(Dataset):
         self.start_frames = []
         self.end_frames = []
         self.names = []
-        self.name2idx = {}
+        self.species2idx = {}
+        self.species2motion = {}
 
         ## motion set related info
         self.mi_ri_2_fi = [] 
@@ -115,11 +116,17 @@ class PairedDataset(Dataset):
         self.start_frames.append(start)
         self.end_frames.append(end)
         
+        # character name
         name = filepath.split("/")[-2]
         self.names.append(name)
-        if name not in self.name2idx:
-            self.name2idx[name] = []
-        self.name2idx[name].append(fi)
+        if name not in self.species2idx:
+            self.species2idx[name] = []
+            self.species2motion[name] = []
+        self.species2idx[name].append(fi)
+        
+        # motion name 
+        motion_name = filepath.split("/")[-1]
+        self.species2motion[name].append(motion_name)
 
         # update pair-related info
         assert len(self.mi_ri_2_fi) >= mi
@@ -336,7 +343,7 @@ def PairedGraph_collate_fn(batch, mask_option=[], consq_n=-1, device="cpu"):
 def get_paired_data_loader(data_dir, batch_size, consq_n, shuffle, mask_option, device):
     ds = PairedDataset()
     ds.load_data_dir_pairs(data_dir)
-    print(f"dataset: {len(ds.name2idx.keys())}")
+    print(f"dataset: {len(ds.species2idx.keys())}")
 
     sampler = PairConsqSampler(
         ds, batch_size=batch_size, consq_n=consq_n, shuffle=shuffle

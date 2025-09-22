@@ -129,8 +129,5 @@ all_data.tar.xz
 *.tga
 *.DAE
 
-data/TruebonesZoo/
-data/_old
+data/
 _data_backup/
-data/train_old/
-data/train/
