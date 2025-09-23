@@ -4,7 +4,7 @@ train_data:
 
 representation:
   skel: [lo, go] # S
-  pose: [q, p, r, pv, qv, pprev] # D_t , c
+  pose: [q, p, r, pv, qv, pprev, c] # D_t
   out: [r, q, c] # \hat{D_t}
 
 model:
@@ -51,7 +51,7 @@ train:
     p: 0.01
     r: 10
     pv: 1
-    c:  0 # 1
+    c:  1
     cv: 0 # 6
     z: 1
     pen: 0.1

@@ -1,5 +1,5 @@
 """
-python same/train.py --exp "250922_TruebonesZoo_dog"
+python same/train.py --exp "250923_TruebonesZoo_dog_wC"
 """
 
 import argparse, sys, yaml, gc, shutil
