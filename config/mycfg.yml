@@ -52,7 +52,7 @@ train:
     r: 10
     pv: 1
     c:  1
-    cv: 0 # 6
+    cv: 6 # 
     z: 1
     pen: 0.1
     slide: 6

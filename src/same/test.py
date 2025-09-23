@@ -1,6 +1,6 @@
 """
 cd src 
-python same/test.py --data_dir "train/motion/processed/" --model_epoch "250922_TruebonesZoo_dog"
+python same/test.py --data_dir "train/motion/processed/" --model_epoch "250923_TruebonesZoo_dog_wC"
 python same/test.py --data_dir "TruebonesZoo_processed_by_JH/motion/processed/" --model_epoch "250921_TruebonesZoo_scaled"
 
 """
@@ -196,9 +196,8 @@ if __name__ == "__main__":
         # intra retareting 
         # 'Leapord', 'Isopetra', 'Ant', 'Alligator', 'Coyote', 'Deer', 'Hamster', 'Mammoth', 'Jaguar', 'Lynx', 'Spider', 'Roach', 'Tricera', 'Scorpion', 'Tyranno', 'Pigeon', 'FireAnt', 'Crab', 'Elephant', 'Bear', 'SpiderG', 'Gazelle', 'Rhino', 'Crow', 'Bat', 'Horse', 'Comodoa', 'Parrot', 'Turtle', 'PolarBearB', 'Raptor3', 'Raptor', 'HermitCrab', 'SandMouse', 'PolarBear', 'Hippopotamus', 'Buffalo'
         # 'Eagle', 'Crow', 'Bear', 'Crocodile', 'KingCobra', 'Alligator', 'Jaguar', 'Pirrana', 'Buffalo', 'Spider', 'Parrot2', 'Cat', 'Bat', 'Ostrich', 'Comodoa', 'Elephant', 'Dog', 'PolarBear', 'Gazelle', 'Camel', 'Dragon', 'Raptor3', 'Bird', 'Fox', 'Isopetra', 'Anaconda', 'Scorpion-2', 'Trex', 'Deer', 'Giantbee', 'Coyote', 'Cricket', 'Horse', 'Roach', 'Raptor', 'Flamingo', 'Skunk', 'Puppy', 'Raindeer', 'Tyranno', 'Ant', 'Monkey', 'Crab', 'Goat', 'Turtle', 'Tukan', 'Dog-2', 'Rhino', 'PolarBearB', 'Buzzard', 'FireAnt', 'Leapord', 'Scorpion', 'SpiderG', 'Hippopotamus', 'Pigeon', 'Stego', 'Mammoth', 'Chicken', 'Raptor2', 'HermitCrab', 'SandMouse', 'Parrot', 'Tricera', 'BrownBear', 'Hound', 'Lynx'
-        breakpoint()
         speciecs = "Dog"
-        mi_in_specices = 2
+        mi_in_specices = 0
         mi = ds.species2idx[speciecs][mi_in_specices]
         motion_name = ds.species2motion[speciecs][mi_in_specices]
         print("mi:", mi, motion_name) #, ds.idx2name[mi]
