@@ -1,8 +1,6 @@
 """
 cd src 
-python same/test.py --data_dir "train/motion/processed/" --model_epoch "250923_TruebonesZoo_dog_wC"
-python same/test.py --data_dir "TruebonesZoo_processed_by_JH/motion/processed/" --model_epoch "250921_TruebonesZoo_scaled"
-
+python same/test.py --data_dir "train/motion/processed/" --model_epoch "250923_TruebonesZoo_strong_p_pv"
 """
 import argparse
 import os
