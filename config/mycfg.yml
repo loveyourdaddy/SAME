@@ -26,7 +26,7 @@ model:
 
 train:
   consq_n: 8
-  batch_size: 256 # 512 if GPU memory allows
+  batch_size: 128 # 512 if GPU memory allows
   grad_max_norm: 0.5
   learning_rate: 0.01
   
@@ -35,7 +35,7 @@ train:
     gamma: 0.99
     min: 0.01
 
-  epoch_num: 3000 # 300
+  epoch_num: 1000 # 300
   save_per: 30
 
   # load trainer to continue training

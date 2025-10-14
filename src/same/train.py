@@ -1,5 +1,5 @@
 """
-python same/train.py --exp "250930_quadropeds"
+python same/train.py --exp "251014_new_pairs"
 """
 
 import argparse, sys, yaml, gc, shutil

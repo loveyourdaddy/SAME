@@ -82,11 +82,13 @@ class PairedDataset(Dataset):
 
         ## motion set related info
         self.mi_ri_2_fi = [] 
+        # [motion index (set), retarget_index (0/1)] -> file_index
+        # mi_ri_2_fi[mi, ri] = fi
+        
         # mi: semantic motion index (same mi means semantically identical motion)
         # ri: 0<=ri<R, 
         # R: number of retargeted motions (including original data)
-        # mi_ri_2_fi[mi, ri] = fi
-        # motion_index x retarget_index -> file_index
+        # 겹치는 데이터가 있으면 동일한 항목에 넣어줌
         
         # Tpose 
         self.tpose_dir = "../data/train/motion/processed/" # "../data/train/character/bvh"
@@ -103,12 +105,45 @@ class PairedDataset(Dataset):
         # skel_data, pose_data_list
         sd, pdl = npz_2_data(lo, go, qb, edges, q, p, qv, pv, pprev, c, r)
 
-        self.skel_list.append(sd)
-        self.pose_list.extend(pdl)
-
         # update file info
         fi = len(self.filepaths)
         nFrame = q.shape[0]
+        
+        # motion name 
+        motion_name = filepath.split("/")[-1]
+        
+        # update pair-related info
+        assert len(self.mi_ri_2_fi) >= mi
+        if len(self.mi_ri_2_fi) == mi:
+            # 새로운 semantic motion set - 항상 허용
+            pass
+        else:
+            # 기존 모션에 리타겟팅 추가 - 프레임 수 검증
+            orig_fi = self.mi_ri_2_fi[mi][0]
+            orig_nFrame = self.frame_cnts[orig_fi]
+
+            if orig_nFrame != nFrame:
+                # 프레임 수 불일치 - 데이터 제외
+                print(f"[SKIP] Frame count mismatch (mi={mi}):")
+                print(f"  Original: {self.filepaths[orig_fi]} ({orig_nFrame} frames)")
+                print(f"  Current:  {filepath} ({nFrame} frames)")
+                print(f"  Motion:   {motion_name}")
+            
+            if self.copy_orig_contact:
+                # copy contact from the original motion (optional)
+                lf, rf = find_feet(sd)
+                orig_sd = self.skel_list[orig_fi]
+                orig_start = self.start_frames[orig_fi]
+                orig_pdl = self.pose_list[orig_start : orig_start + orig_nFrame]
+                orig_lf, orig_rf = find_feet(orig_sd)
+                for pdi, orig_pdi in zip(pdl, orig_pdl):
+                    pdi.c[lf] = orig_pdi.c[orig_lf]
+                    pdi.c[rf] = orig_pdi.c[orig_rf]
+
+        # 여기까지 왔다면 모든 검증 통과 - 데이터 추가
+        self.skel_list.append(sd)
+        self.pose_list.extend(pdl)
+
         start = sum(self.frame_cnts)
         end = start + nFrame
         self.filepaths.append(filepath)
@@ -123,35 +158,16 @@ class PairedDataset(Dataset):
             self.species2idx[name] = []
             self.species2motion[name] = []
         self.species2idx[name].append(fi)
-        
-        # motion name 
-        motion_name = filepath.split("/")[-1]
         self.species2motion[name].append(motion_name)
 
-        # update pair-related info
-        assert len(self.mi_ri_2_fi) >= mi
+        # update mi_ri_2_fi mapping
         if len(self.mi_ri_2_fi) == mi:
             # new semantic motion set
             self.mi_ri_2_fi.append([])
-        else:
-            # make sure the number of frames is consistent among retargeted dataset
-            orig_fi = self.mi_ri_2_fi[mi][0]
-            orig_nFrame = self.frame_cnts[orig_fi]
-
-            assert orig_nFrame == nFrame
-            if self.copy_orig_contact:
-                # copy contact from the original motion (optional)
-                lf, rf = find_feet(sd)
-                orig_sd = self.skel_list[orig_fi]
-                orig_start = self.start_frames[orig_fi]
-                orig_pdl = self.pose_list[orig_start : orig_start + orig_nFrame]
-                orig_lf, orig_rf = find_feet(orig_sd)
-                for pdi, orig_pdi in zip(pdl, orig_pdl):
-                    pdi.c[lf] = orig_pdi.c[orig_lf]
-                    pdi.c[rf] = orig_pdi.c[orig_rf]
-
+        print(f"add data : {motion_name}")
+        
         self.mi_ri_2_fi[mi].append(fi)
-
+        
     def add_data_from_npz(self, mi, npz_fp, bvh_fp=None):
         data = np.load(npz_fp)
         if bvh_fp is None:
@@ -191,7 +207,10 @@ class PairedDataset(Dataset):
                         bvh_prefix, Path(dst_rel_path).with_suffix("")
                     )
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
-
+    
+        # 리타겟팅 데이터가 2개 미만인 모션 세트 제거
+        self.mi_ri_2_fi = [motion_set for motion_set in self.mi_ri_2_fi if len(motion_set) >= 2]
+    
     # load data 
     def get_mi_ri_fi_graph(self, mi, ri, frame):
         fi = self.mi_ri_2_fi[mi][ri]
@@ -286,10 +305,12 @@ class PairConsqSampler(Sampler):
             np.random.shuffle(self.valid_mi_frames)
 
         # random src/tgt skeletons (including the original ones)
-        try:  # if all retargeted motions have the same number of frames
+        try:
+            # if all retargeted motions have the same number of frames
             R = np.array(self.dataset.mi_ri_2_fi).shape[1]
             ris = np.random.randint(0, R, size=(len(self.valid_mi_frames), 2))
         except:
+            # retargeted motions에 모션의 갯수가 다를 때, 랜덤으로 2개씩 뽑아서 학습
             ris = [
                 random.sample(range(len(self.dataset.mi_ri_2_fi[mi])), 2)
                 for mi in self.valid_mi_frames[:, 0]
@@ -321,7 +342,7 @@ class PairConsqSampler(Sampler):
                     break
 
     def __len__(self):
-        return len(self.valid_mi_frames) // self.batch_size // self.consq_n
+        return len(self.valid_mi_frames) // self.batch_size # // self.consq_n
 
 
 def PairedGraph_collate_fn(batch, mask_option=[], consq_n=-1, device="cpu"):
