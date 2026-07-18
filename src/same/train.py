@@ -1,6 +1,5 @@
 """
-python same/train.py --exp "251022_new_pairs" 
-251015_new_pairs (Cross)
+python same/train.py --exp "260718_truebone"
 """
 
 import argparse, sys, yaml, gc, shutil
@@ -74,8 +73,10 @@ if __name__ == "__main__":
 
     ## Dataset
     data_dir = os.path.join(DATA_DIR, cfg["train_data"]["dir"])
+    pairs_txt = cfg["train_data"]["pairs_txt"]
     dl = get_paired_data_loader(
         data_dir,
+        pairs_txt,
         train_cfg["batch_size"],
         train_cfg["consq_n"],
         shuffle=False, # True

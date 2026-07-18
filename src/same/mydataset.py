@@ -129,6 +129,7 @@ class PairedDataset(Dataset):
                 print(f"  Original: {self.filepaths[orig_fi]} ({orig_nFrame} frames)")
                 print(f"  Current:  {filepath} ({nFrame} frames)")
                 print(f"  Motion:   {motion_name}")
+                return  
             
             if self.copy_orig_contact:
                 # copy contact from the original motion (optional)
@@ -176,14 +177,17 @@ class PairedDataset(Dataset):
 
         self.add_data(**data, filepath=bvh_fp, mi=mi) # data: lo, go, qb, edges, q, p, qv, pv, pprev, c, r,
 
-    def load_data_dir_pairs(self, data_dir):
-        pair_path = os.path.join(data_dir, "pair.txt")
+    def load_data_dir_pairs(self, data_dir, pairs_txt):
+        # pair_path = os.path.join(data_dir, "pair.txt")
+        pair_path = os.path.join(data_dir, pairs_txt)
         assert os.path.exists(pair_path), pair_path + " does not exist"
         bvh_prefix = os.path.join(os.path.dirname(data_dir), "bvh")
 
         # mi_ri_2_fi 구성
         # source 이름으로 분류(종, 모션도 동일해야 같은 set)
-        src_id_map = {}
+        src_id_map = {}   # src_rel -> mi
+        mi_files = {}     # mi -> set of files already in this mi
+
         with open(pair_path, "r") as pair_file:
             for line in pair_file:
                 if line.strip() == "":
@@ -192,37 +196,25 @@ class PairedDataset(Dataset):
 
                 if src_rel_path in src_id_map:
                     src_id = src_id_map[src_rel_path]
-
                 else:  # new source
                     src_id = len(self.mi_ri_2_fi)
                     src_id_map[src_rel_path] = src_id
+                    mi_files[src_id] = {src_rel_path}
                     npz_fp = os.path.join(data_dir, src_rel_path)
                     bvh_fp = os.path.join(
                         bvh_prefix, Path(src_rel_path).with_suffix("")
                     )
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
 
-                if dst_rel_path in src_id_map:
-                    continue
-                else:
+                # dst가 현재 mi에 없으면 추가 (다른 mi에 있어도 추가함)
+                if dst_rel_path not in mi_files.get(src_id, set()):
+                    mi_files.setdefault(src_id, set()).add(dst_rel_path)
                     npz_fp = os.path.join(data_dir, dst_rel_path)
                     bvh_fp = os.path.join(
                         bvh_prefix, Path(dst_rel_path).with_suffix("")
                     )
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
-    
-        # 후처리: 리타겟팅 데이터가 2개 미만인 모션 세트 제거 (학습에서 필요함)
-        # self.mi_ri_2_fi = [motion_set for motion_set in self.mi_ri_2_fi if len(motion_set) >= 2]
-
-        # For Debugging  (test time에서 필요함)
-        # src_id_map에서 유효하지 않은 항목 제거
-        # valid_mi_set = set()
-        # for mi, motion_set in enumerate(self.mi_ri_2_fi):
-        #     if len(motion_set) >= 2:
-        #         valid_mi_set.add(mi)
-        # src_id_map = {k: v for k, v in src_id_map.items() if v in valid_mi_set} # value (index)가 정렬되진 않음
-        
-        # TODO: name에서 제거 되지 않음. (for test time debugging)
+                print(f"[data] {src_rel_path} -> {dst_rel_path}")
     
     # load data 
     def get_mi_ri_fi_graph(self, mi, ri, frame):
@@ -323,7 +315,9 @@ class PairConsqSampler(Sampler):
             R = np.array(self.dataset.mi_ri_2_fi).shape[1]
             ris = np.random.randint(0, R, size=(len(self.valid_mi_frames), 2))
         except:
-            # retargeted motions에 모션의 갯수가 다를 때, 랜덤으로 2개씩 뽑아서 학습
+            # motion-set마다 clip 수가 다를 때 (ragged array)
+            # retargeted motions에 모션의 갯수가 다를 때, 그룹안에서 랜덤으로 2개씩 뽑아서 학습
+            # (1개면 에러남)
             ris = [
                 random.sample(range(len(self.dataset.mi_ri_2_fi[mi])), 2)
                 for mi in self.valid_mi_frames[:, 0]
@@ -374,9 +368,9 @@ def PairedGraph_collate_fn(batch, mask_option=[], consq_n=-1, device="cpu"):
     return src_batch.to(device), tgt_batch.to(device)
 
 
-def get_paired_data_loader(data_dir, batch_size, consq_n, shuffle, mask_option, device):
+def get_paired_data_loader(data_dir, pairs_txt, batch_size, consq_n, shuffle, mask_option, device):
     ds = PairedDataset()
-    ds.load_data_dir_pairs(data_dir)
+    ds.load_data_dir_pairs(data_dir, pairs_txt)
     print(f"dataset: {len(ds.species2fi.keys())}")
 
     sampler = PairConsqSampler(

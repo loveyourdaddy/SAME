@@ -1,5 +1,6 @@
 train_data:
-  dir: train/motion/processed
+  dir: TruebonesZoo_processed_byJH/motion/processed
+  pairs_txt: truebones_train.txt   # pair list under `dir`
   mask: [src, tgt]
 
 representation:
@@ -18,14 +19,9 @@ model:
       hid_lyrs: [16, 16, 16]
       heads_num: 16
       tgt_all_lyr: True
-  # load: 
-  #   - dir: blahblah
-  #     epoch: 
-  #     prefix: encoder
-  #     freeze: True
 
 train:
-  consq_n: 8 # 얼마나 연속된 프레임을 한번에 처리하는가.
+  consq_n: 8 # number of consecutive frames processed together
   batch_size: 128 # 512 if GPU memory allows
   grad_max_norm: 0.5
   learning_rate: 0.01
@@ -35,15 +31,9 @@ train:
     gamma: 0.99
     min: 0.01
 
-  epoch_num: 1000 # 300
+  epoch_num: 300
   save_per: 30
 
-  # load trainer to continue training
-  # load:
-  #   dir: prev_trainer
-  #   epoch: None
-
-  # misc
   copy_orig_contact: False
 
   loss:
