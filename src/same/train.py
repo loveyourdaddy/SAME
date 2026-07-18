@@ -1,5 +1,6 @@
 """
-python same/train.py --exp "251014_new_pairs"
+python same/train.py --exp "251022_new_pairs" 
+251015_new_pairs (Cross)
 """
 
 import argparse, sys, yaml, gc, shutil

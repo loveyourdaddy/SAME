@@ -1,6 +1,7 @@
 """
 cd src 
-python same/test.py --data_dir "train/motion/processed/" --model_epoch ""
+python same/test.py --data_dir "train/motion/processed/" --model_epoch "250930_BIPEDS"
+python same/test.py --data_dir "train/motion/processed/" --model_epoch "251015_new_pairs"
 """
 import argparse
 import os
@@ -19,7 +20,7 @@ from same.skel_pose_graph import SkelPoseGraph, rnd_mask
 from utils.skel_gen_utils import create_random_skel
 from conversions.graph_to_motion import graph_2_skel
 from fairmotion.core import motion as motion_class
-
+from fairmotion.ops import math, conversions
 
 def prepare_model_test(model_epoch, device):
     # device, printoptions
@@ -131,7 +132,6 @@ def save_bvh_z(model_epoch, bvh_dir, npy_dir):
         torch.cuda.empty_cache()
 
 # Scale all motion
-from fairmotion.ops import math, conversions
 def scale_motion(motion, unit_scale=100):
     """
     Scale motion from meters to centimeters
@@ -191,28 +191,39 @@ if __name__ == "__main__":
 
     # motion index
     def retarget_mi(mi):
-        # intra retareting 
-        # 'Leapord', 'Isopetra', 'Ant', 'Alligator', 'Coyote', 'Deer', 'Hamster', 'Mammoth', 'Jaguar', 'Lynx', 'Spider', 'Roach', 'Tricera', 'Scorpion', 'Tyranno', 'Pigeon', 'FireAnt', 'Crab', 'Elephant', 'Bear', 'SpiderG', 'Gazelle', 'Rhino', 'Crow', 'Bat', 'Horse', 'Comodoa', 'Parrot', 'Turtle', 'PolarBearB', 'Raptor3', 'Raptor', 'HermitCrab', 'SandMouse', 'PolarBear', 'Hippopotamus', 'Buffalo'
-        # 'Eagle', 'Crow', 'Bear', 'Crocodile', 'KingCobra', 'Alligator', 'Jaguar', 'Pirrana', 'Buffalo', 'Spider', 'Parrot2', 'Cat', 'Bat', 'Ostrich', 'Comodoa', 'Elephant', 'Dog', 'PolarBear', 'Gazelle', 'Camel', 'Dragon', 'Raptor3', 'Bird', 'Fox', 'Isopetra', 'Anaconda', 'Scorpion-2', 'Trex', 'Deer', 'Giantbee', 'Coyote', 'Cricket', 'Horse', 'Roach', 'Raptor', 'Flamingo', 'Skunk', 'Puppy', 'Raindeer', 'Tyranno', 'Ant', 'Monkey', 'Crab', 'Goat', 'Turtle', 'Tukan', 'Dog-2', 'Rhino', 'PolarBearB', 'Buzzard', 'FireAnt', 'Leapord', 'Scorpion', 'SpiderG', 'Hippopotamus', 'Pigeon', 'Stego', 'Mammoth', 'Chicken', 'Raptor2', 'HermitCrab', 'SandMouse', 'Parrot', 'Tricera', 'BrownBear', 'Hound', 'Lynx'
-        speciecs = "Eagle"
+        # source
+        speciecs = "Tyranno" # BrownBear
         mi_in_specices = 0
-        mi = ds.species2idx[speciecs][mi_in_specices]
+        # species2fi은 각 species별 motion index? 
+        # breakpoint()
+        mi = ds.species2fi[speciecs][mi_in_specices]
         motion_name = ds.species2motion[speciecs][mi_in_specices]
-        print("mi:", mi, motion_name) #, ds.idx2name[mi]
+        print(f"mi: {mi}, {motion_name}") #, ds.idx2name[mi]
         
-        # src
-        R = len(ds.mi_ri_2_fi[mi])
-        src_ri, tgt_ri = np.random.randint(0, R, size=2) # 인덱스 안에서 샘플링 (보통 1개)
+        # index 
+        indomain = True
+        if indomain:
+            # mi안에서 skeleton index: speciecs을 그대로 사용함
+            src_ri = tgt_ri = 0
+        else:
+            R = len(ds.mi_ri_2_fi[mi]) # 해당 mi에 속한 skeleton 개수
+            src_ri, tgt_ri = np.random.randint(0, R, size=2) # 인덱스 안에서 샘플링
+            
+        # mi: motionset의 index
+        # src_ri: motionset 중 src로 사용할 skeleton 인덱스 
+        # tgt_ri: motionset 중 tgt로 사용할 skeleton 인덱스
+        src_fi = ds.mi_ri_2_fi[mi][src_ri]
+        tgt_fi = ds.mi_ri_2_fi[mi][tgt_ri]
+        src_name = ds.names[src_fi] # length 1을 제외하면서 names에 오류가능성 
+        tgt_name = ds.names[tgt_fi]
         
-        # load data 
-        (src_batch, tgt_batch), consq_n = get_mi_src_tgt_all_graph(
-            dataset=ds, mi=mi, src_ri=src_ri, tgt_ri=tgt_ri, device=args.device
-        )
+        print(f"Source skeleton: {src_name}")
+        print(f"Target skeleton: {tgt_name}")
         
-        # target
-        tgt_skel = ds.skel_list[mi]
-        tgt_batch = Batch.from_data_list([SkelPoseGraph(tgt_skel, None) for _ in range(consq_n)]).to(device=args.device)
+        # load data
+        (src_batch, tgt_batch), consq_n = get_mi_src_tgt_all_graph(dataset=ds, mi=mi, src_ri=src_ri, tgt_ri=tgt_ri, device=args.device)
         
+        # retarget
         src_motion, tgt_motion, out_motion = retarget(
             model,
             src_batch,

@@ -67,28 +67,29 @@ class PairedDataset(Dataset):
 
     def __init__(self):
         # skel
-        self.skel_list = []
-        self.pose_list = []
+        self.skel_list = [] # len: all motions
+        self.pose_list = [] # len: sum of all frames of all motions
 
-        ## file info.
+        ## file info (for all motions)
         # nFile: number of all npz files loaded, including original and retargeted
         self.filepaths = []
         self.frame_cnts = []
         self.start_frames = []
         self.end_frames = []
-        self.names = []
-        self.species2idx = {}
+        self.names = [] # species neames 
+        
+        # species to (idx, motion)
+        self.species2fi = {}
         self.species2motion = {}
 
         ## motion set related info
-        self.mi_ri_2_fi = [] 
         # [motion index (set), retarget_index (0/1)] -> file_index
         # mi_ri_2_fi[mi, ri] = fi
-        
         # mi: semantic motion index (same mi means semantically identical motion)
         # ri: 0<=ri<R, 
         # R: number of retargeted motions (including original data)
         # 겹치는 데이터가 있으면 동일한 항목에 넣어줌
+        self.mi_ri_2_fi = [] 
         
         # Tpose 
         self.tpose_dir = "../data/train/motion/processed/" # "../data/train/character/bvh"
@@ -132,7 +133,7 @@ class PairedDataset(Dataset):
             if self.copy_orig_contact:
                 # copy contact from the original motion (optional)
                 lf, rf = find_feet(sd)
-                orig_sd = self.skel_list[orig_fi]
+                orig_sd = self.skel_list[orig_fi] # skel list 
                 orig_start = self.start_frames[orig_fi]
                 orig_pdl = self.pose_list[orig_start : orig_start + orig_nFrame]
                 orig_lf, orig_rf = find_feet(orig_sd)
@@ -151,16 +152,16 @@ class PairedDataset(Dataset):
         self.start_frames.append(start)
         self.end_frames.append(end)
         
-        # character name
+        # character name (species to idx, motion)
         name = filepath.split("/")[-2]
         self.names.append(name)
-        if name not in self.species2idx:
-            self.species2idx[name] = []
+        if name not in self.species2fi:
+            self.species2fi[name] = []
             self.species2motion[name] = []
-        self.species2idx[name].append(fi)
+        self.species2fi[name].append(fi)
         self.species2motion[name].append(motion_name)
 
-        # update mi_ri_2_fi mapping
+        # 동일한 motion index라면 같은 그룹 (update mi_ri_2_fi mapping)
         if len(self.mi_ri_2_fi) == mi:
             # new semantic motion set
             self.mi_ri_2_fi.append([])
@@ -180,6 +181,8 @@ class PairedDataset(Dataset):
         assert os.path.exists(pair_path), pair_path + " does not exist"
         bvh_prefix = os.path.join(os.path.dirname(data_dir), "bvh")
 
+        # mi_ri_2_fi 구성
+        # source 이름으로 분류(종, 모션도 동일해야 같은 set)
         src_id_map = {}
         with open(pair_path, "r") as pair_file:
             for line in pair_file:
@@ -208,8 +211,18 @@ class PairedDataset(Dataset):
                     )
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
     
-        # 리타겟팅 데이터가 2개 미만인 모션 세트 제거
-        self.mi_ri_2_fi = [motion_set for motion_set in self.mi_ri_2_fi if len(motion_set) >= 2]
+        # 후처리: 리타겟팅 데이터가 2개 미만인 모션 세트 제거 (학습에서 필요함)
+        # self.mi_ri_2_fi = [motion_set for motion_set in self.mi_ri_2_fi if len(motion_set) >= 2]
+
+        # For Debugging  (test time에서 필요함)
+        # src_id_map에서 유효하지 않은 항목 제거
+        # valid_mi_set = set()
+        # for mi, motion_set in enumerate(self.mi_ri_2_fi):
+        #     if len(motion_set) >= 2:
+        #         valid_mi_set.add(mi)
+        # src_id_map = {k: v for k, v in src_id_map.items() if v in valid_mi_set} # value (index)가 정렬되진 않음
+        
+        # TODO: name에서 제거 되지 않음. (for test time debugging)
     
     # load data 
     def get_mi_ri_fi_graph(self, mi, ri, frame):
@@ -364,7 +377,7 @@ def PairedGraph_collate_fn(batch, mask_option=[], consq_n=-1, device="cpu"):
 def get_paired_data_loader(data_dir, batch_size, consq_n, shuffle, mask_option, device):
     ds = PairedDataset()
     ds.load_data_dir_pairs(data_dir)
-    print(f"dataset: {len(ds.species2idx.keys())}")
+    print(f"dataset: {len(ds.species2fi.keys())}")
 
     sampler = PairConsqSampler(
         ds, batch_size=batch_size, consq_n=consq_n, shuffle=shuffle

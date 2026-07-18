@@ -25,7 +25,7 @@ model:
   #     freeze: True
 
 train:
-  consq_n: 8
+  consq_n: 8 # 얼마나 연속된 프레임을 한번에 처리하는가.
   batch_size: 128 # 512 if GPU memory allows
   grad_max_norm: 0.5
   learning_rate: 0.01
