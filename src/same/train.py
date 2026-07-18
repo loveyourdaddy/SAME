@@ -1,5 +1,7 @@
 """
+export PYTHONPATH=/source/Inseo/SAME/src:$PYTHONPATH
 python same/train.py --exp "260718_truebone"
+python same/train.py --exp "260718_truebone_newsplit" --cfg "cfg_260718_truebone_split"
 """
 
 import argparse, sys, yaml, gc, shutil

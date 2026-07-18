@@ -310,18 +310,25 @@ class PairConsqSampler(Sampler):
             np.random.shuffle(self.valid_mi_frames)
 
         # random src/tgt skeletons (including the original ones)
-        try:
-            # if all retargeted motions have the same number of frames
-            R = np.array(self.dataset.mi_ri_2_fi).shape[1]
-            ris = np.random.randint(0, R, size=(len(self.valid_mi_frames), 2))
-        except:
-            # motion-set마다 clip 수가 다를 때 (ragged array)
-            # retargeted motions에 모션의 갯수가 다를 때, 그룹안에서 랜덤으로 2개씩 뽑아서 학습
-            # (1개면 에러남)
-            ris = [
-                random.sample(range(len(self.dataset.mi_ri_2_fi[mi])), 2)
-                for mi in self.valid_mi_frames[:, 0]
-            ]
+        # try:
+        #     # if all retargeted motions have the same number of frames
+        #     R = np.array(self.dataset.mi_ri_2_fi).shape[1]
+        #     ris = np.random.randint(0, R, size=(len(self.valid_mi_frames), 2))
+        # except:
+        #     # motion-set마다 clip 수가 다를 때 (ragged array)
+        #     # retargeted motions에 모션의 갯수가 다를 때, 그룹안에서 랜덤으로 2개씩 뽑아서 학습
+        #     # (1개면 에러남)
+        #     ris = [
+        #         random.sample(range(len(self.dataset.mi_ri_2_fi[mi])), 2)
+        #         for mi in self.valid_mi_frames[:, 0]
+        #     ]
+
+        # R=1인 경우도 허용 (if not valid motion, self-reconstruction)
+        ris = [
+            [random.randrange(len(self.dataset.mi_ri_2_fi[mi])),
+             random.randrange(len(self.dataset.mi_ri_2_fi[mi]))]
+            for mi in self.valid_mi_frames[:, 0]
+        ]
 
         batch = []
         n_iter = 0

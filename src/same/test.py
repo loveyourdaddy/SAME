@@ -194,8 +194,7 @@ if __name__ == "__main__":
         # source
         speciecs = "Tyranno" # BrownBear
         mi_in_specices = 0
-        # species2fi은 각 species별 motion index? 
-        # breakpoint()
+        # species2fi은 각 species별 motion index
         mi = ds.species2fi[speciecs][mi_in_specices]
         motion_name = ds.species2motion[speciecs][mi_in_specices]
         print(f"mi: {mi}, {motion_name}") #, ds.idx2name[mi]
