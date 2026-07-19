@@ -1,11 +1,22 @@
 """
-cd src 
+cd src
 python same/test.py --data_dir "train/motion/processed/" --model_epoch "250930_BIPEDS"
 python same/test.py --data_dir "train/motion/processed/" --model_epoch "251015_new_pairs"
+
+python same/test.py --data_dir "TruebonesZoo_processed_byJH/motion/processed/" --model_epoch "260718_truebone" --pairs_txt "pair.txt"
+
+또는 test용 pair 파일이 따로 있다면 (pairs_txt의 모든 pair를 순회하며 retarget 후
+<out_dir>/pair<idx>__..__SRC/TGT/OUT.bvh + retarget_log.csv로 저장):
+python same/test.py --data_dir "TruebonesZoo_processed_byJH/motion/processed/" --model_epoch "260718_truebone" --pairs_txt "truebones_test.txt"
+data/TruebonesZoo_processed_byJH/motion/processed/truebones_vt_exact_test.txt
 """
 import argparse
+import csv
 import os
+import re
 import sys
+import time
+from pathlib import Path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
@@ -20,6 +31,7 @@ from same.skel_pose_graph import SkelPoseGraph, rnd_mask
 from utils.skel_gen_utils import create_random_skel
 from conversions.graph_to_motion import graph_2_skel
 from fairmotion.core import motion as motion_class
+from fairmotion.data import bvh
 from fairmotion.ops import math, conversions
 
 def prepare_model_test(model_epoch, device):
@@ -56,7 +68,8 @@ def retarget(model, src_batch, tgt_batch, ms_dict, out_rep_cfg, consq_n):
     src_motion_list, src_contact_list = gt_recon_motion(src_batch, consq_n)
     
     # predicted result
-    z, hatD = model(src_batch, tgt_batch) # latent, decoded pose
+    with torch.no_grad():
+        z, hatD = model(src_batch, tgt_batch) # latent, decoded pose
     out_motion_list, out_contact_list = hatD_recon_motion(
         hatD, tgt_batch, out_rep_cfg, ms_dict, consq_n
     )
@@ -165,92 +178,123 @@ def scale_motion(motion, unit_scale=100):
     return motion
 
 
+""" ================= batch pair test (headless, all pairs in pairs_txt) ================= """
+
+
+def _safe_name(rel_path):
+    base = rel_path.replace("\\", "/")
+    base = "__".join(base.split("/")[-2:])
+    base = re.sub(r"\.npz$", "", base)
+    return re.sub(r"[^A-Za-z0-9_\-\.]+", "_", base)
+
+
+def read_pairs(pairs_path):
+    pairs = []
+    with open(pairs_path, "r", encoding="utf-8") as f:
+        for ln in f:
+            ln = ln.strip()
+            if ln:
+                a, b = ln.split()
+                pairs.append((a, b))
+    return pairs
+
+
+def load_pair_dataset(data_dir, src_rel, tgt_rel):
+    # pair 한 쌍만 담은 독립된 PairedDataset. 항상 mi=0, ri=0 -> src, ri=1 -> tgt.
+    # (pair 간 mi를 공유하면 하나의 pair가 joint-count 등으로 걸러졌을 때
+    #  이후 pair들의 mi 정렬이 어긋날 수 있어, pair마다 완전히 격리시킴)
+    ds = PairedDataset()
+    bvh_prefix = os.path.join(os.path.dirname(data_dir), "bvh")
+    ds.add_data_from_npz(
+        0, os.path.join(data_dir, src_rel),
+        os.path.join(bvh_prefix, str(Path(src_rel).with_suffix(""))),
+    )
+    ds.add_data_from_npz(
+        0, os.path.join(data_dir, tgt_rel),
+        os.path.join(bvh_prefix, str(Path(tgt_rel).with_suffix(""))),
+    )
+    return ds
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_epoch", type=str, default="ckpt0")
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--data_dir", type=str, default="test/motion/processed/")
-    parser.add_argument("--rnd_tgt", type=int, default=0)
-    parser.add_argument("--src_mask", type=int, default=0)
-    parser.add_argument("--tgt_mask", type=int, default=0)
-    parser.add_argument("--unit_scale", type=float, default=100, 
+    parser.add_argument("--pairs_txt", type=str, default="pair.txt",
+                       help="pair list file name under data_dir")
+    parser.add_argument("--out_dir", type=str, default=None,
+                       help="bvh 결과 + retarget_log.csv를 저장할 경로 (기본: result/<model_epoch>/test)")
+    parser.add_argument("--unit_scale", type=float, default=100,
                        help="Scale factor for unit conversion (100 for m to cm)")
+    parser.add_argument("--max_pairs", type=int, default=-1)
+    parser.add_argument("--start_idx", type=int, default=0)
+    parser.add_argument("--overwrite", action="store_true")
 
     args = parser.parse_args()
 
     model, cfg, ms_dict = prepare_model_test(args.model_epoch, args.device)
+    out_rep_cfg = cfg["representation"]["out"]
 
-    # Dataset
-    ds = PairedDataset()
     data_dir = os.path.join(DATA_DIR, args.data_dir)
-    ds.load_data_dir_pairs(data_dir)
+    pairs = read_pairs(os.path.join(data_dir, args.pairs_txt))
 
-    from default_veiwer import get_default_viewer
+    out_dir = args.out_dir or os.path.join(RESULT_DIR, args.model_epoch.split("/")[0], "test")
+    out_dir = os.path.abspath(out_dir)
+    os.makedirs(out_dir, exist_ok=True)
 
-    viewer = get_default_viewer(argparse.Namespace(imgui=False))
+    log_path = os.path.join(out_dir, "retarget_log.csv")
+    write_header = not os.path.exists(log_path)
+    log_f = open(log_path, "a", newline="")
+    log_w = csv.writer(log_f)
+    if write_header:
+        log_w.writerow(["idx", "status", "msg", "src_rel", "tgt_rel",
+                        "src_bvh", "tgt_bvh", "out_bvh", "secs"])
 
-    # motion index
-    def retarget_mi(mi):
-        # source
-        speciecs = "Tyranno" # BrownBear
-        mi_in_specices = 0
-        # species2fi은 각 species별 motion index
-        mi = ds.species2fi[speciecs][mi_in_specices]
-        motion_name = ds.species2motion[speciecs][mi_in_specices]
-        print(f"mi: {mi}, {motion_name}") #, ds.idx2name[mi]
-        
-        # index 
-        indomain = True
-        if indomain:
-            # mi안에서 skeleton index: speciecs을 그대로 사용함
-            src_ri = tgt_ri = 0
-        else:
-            R = len(ds.mi_ri_2_fi[mi]) # 해당 mi에 속한 skeleton 개수
-            src_ri, tgt_ri = np.random.randint(0, R, size=2) # 인덱스 안에서 샘플링
-            
-        # mi: motionset의 index
-        # src_ri: motionset 중 src로 사용할 skeleton 인덱스 
-        # tgt_ri: motionset 중 tgt로 사용할 skeleton 인덱스
-        src_fi = ds.mi_ri_2_fi[mi][src_ri]
-        tgt_fi = ds.mi_ri_2_fi[mi][tgt_ri]
-        src_name = ds.names[src_fi] # length 1을 제외하면서 names에 오류가능성 
-        tgt_name = ds.names[tgt_fi]
-        
-        print(f"Source skeleton: {src_name}")
-        print(f"Target skeleton: {tgt_name}")
-        
-        # load data
-        (src_batch, tgt_batch), consq_n = get_mi_src_tgt_all_graph(dataset=ds, mi=mi, src_ri=src_ri, tgt_ri=tgt_ri, device=args.device)
-        
-        # retarget
-        src_motion, tgt_motion, out_motion = retarget(
-            model,
-            src_batch,
-            tgt_batch,
-            ms_dict,
-            out_rep_cfg=cfg["representation"]["out"],
-            consq_n=consq_n,
-        )
-        
-        # Scale all motion
-        src_motion = scale_motion(src_motion, args.unit_scale)
-        # if hasattr(tgt_motion, 'poses'):  # Check if it's a full motion with poses
-        tgt_motion = scale_motion(tgt_motion, args.unit_scale)
-        out_motion = scale_motion(out_motion, args.unit_scale)
+    start = max(0, args.start_idx)
+    end = len(pairs) if args.max_pairs <= 0 else min(len(pairs), start + args.max_pairs)
+    print(f"[test] pairs={len(pairs)} | processing [{start}:{end}) | out={out_dir}")
 
-        # update viewer
-        # viewer.update_motions([src_motion, tgt_motion, out_motion], 150, linear=True)
-        viewer.update_motions([src_motion, out_motion], 150, linear=True)
-        viewer.mi = mi
+    for idx in range(start, end):
+        src_rel, tgt_rel = pairs[idx]
+        t0 = time.time()
+        status, msg = "OK", ""
+        src_bvh_fp = tgt_bvh_fp = out_bvh_fp = ""
+        try:
+            pair_ds = load_pair_dataset(data_dir, src_rel, tgt_rel)
+            (src_batch, tgt_batch), consq_n = get_mi_src_tgt_all_graph(
+                dataset=pair_ds, mi=0, src_ri=0, tgt_ri=1, device=args.device
+            )
+            src_motion, tgt_motion, out_motion = retarget(
+                model, src_batch, tgt_batch, ms_dict, out_rep_cfg, consq_n,
+            )
 
-    retarget_mi(0)
+            src_motion = scale_motion(src_motion, args.unit_scale)
+            tgt_motion = scale_motion(tgt_motion, args.unit_scale)
+            out_motion = scale_motion(out_motion, args.unit_scale)
 
-    def extra_key_callback(key):
-        if key == b"m":
-            next_mi = (viewer.mi + 1) % len(ds.mi_ri_2_fi)
-            retarget_mi(next_mi)
-            return True
-        return False
+            stem = f"pair{idx:06d}__{_safe_name(src_rel)}__TO__{_safe_name(tgt_rel)}"
+            src_bvh_fp = os.path.join(out_dir, f"{stem}__SRC.bvh")
+            tgt_bvh_fp = os.path.join(out_dir, f"{stem}__TGT.bvh")
+            out_bvh_fp = os.path.join(out_dir, f"{stem}__OUT.bvh")
+            if args.overwrite or not os.path.exists(out_bvh_fp):
+                bvh.save(src_motion, src_bvh_fp)
+                bvh.save(tgt_motion, tgt_bvh_fp)
+                bvh.save(out_motion, out_bvh_fp)
+            dt = time.time() - t0
+            print(f"[{idx}] OK  {src_rel} -> {tgt_rel}  ({dt:.2f}s)")
+        except Exception as e:
+            import traceback
+            status, msg = "FAIL", repr(e)
+            dt = time.time() - t0
+            print(f"[{idx}] FAIL {src_rel} -> {tgt_rel}  ({dt:.2f}s): {msg}")
+            traceback.print_exc()
 
-    viewer.extra_key_callback = extra_key_callback
-    viewer.run()
+        log_w.writerow([idx, status, msg, src_rel, tgt_rel,
+                        src_bvh_fp, tgt_bvh_fp, out_bvh_fp, f"{dt:.3f}"])
+        log_f.flush()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    log_f.close()
+    print(f"[test] done -> {out_dir}")
