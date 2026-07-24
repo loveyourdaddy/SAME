@@ -206,9 +206,16 @@ class PairedDataset(Dataset):
                     )
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
 
+                # dst path가 src에 없다면 motion index에 추가하기
+                # 같은 target 클립이 여러 다른 source motion-set에 정당하게 중복 소속 가능하게 하기. # TODO (필요한지 debug)
+                # if dst_rel_path not in mi_files.get(src_id, set()):
+                #     mi_files.setdefault(src_id, set()).add(dst_rel_path) 
+                
                 # dst가 현재 mi에 없으면 추가 (다른 mi에 있어도 추가함)
-                if dst_rel_path not in mi_files.get(src_id, set()):
-                    mi_files.setdefault(src_id, set()).add(dst_rel_path)
+                if dst_rel_path in src_id_map:
+                    # dst가 src로 쓰였으면 skip
+                    continue
+                else:
                     npz_fp = os.path.join(data_dir, dst_rel_path)
                     bvh_fp = os.path.join(
                         bvh_prefix, Path(dst_rel_path).with_suffix("")
