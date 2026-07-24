@@ -187,13 +187,13 @@ class PairedDataset(Dataset):
         # source 이름으로 분류(종, 모션도 동일해야 같은 set)
         src_id_map = {}   # src_rel -> mi
         mi_files = {}     # mi -> set of files already in this mi
-
         with open(pair_path, "r") as pair_file:
             for line in pair_file:
                 if line.strip() == "":
                     continue
                 src_rel_path, dst_rel_path = line.strip().split()
 
+                # src id 찾기 (없으면 넣기)
                 if src_rel_path in src_id_map:
                     src_id = src_id_map[src_rel_path]
                 else:  # new source
@@ -377,7 +377,7 @@ def PairedGraph_collate_fn(batch, mask_option=[], consq_n=-1, device="cpu"):
 
 def get_paired_data_loader(data_dir, pairs_txt, batch_size, consq_n, shuffle, mask_option, device):
     ds = PairedDataset()
-    ds.load_data_dir_pairs(data_dir, pairs_txt)
+    ds.load_data_dir_pairs(data_dir, pairs_txt) # pair 데이터 만들어서 저장하기. mi_ri_2_fi
     print(f"dataset: {len(ds.species2fi.keys())}")
 
     sampler = PairConsqSampler(

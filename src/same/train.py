@@ -18,6 +18,10 @@ from same.skel_pose_graph import SkelPoseGraph
 from same.loss import compute_loss
 from same.metric import compute_metric
 
+# TruebonesZoo 데이터에는 __TPOSE.npz가 없어 원본 조인트 검증이 전 클립을 버림.
+# 검증을 무력화해 전체 데이터를 학습에 사용 (any2any fork의 validate_joints=False와 동일).
+PairedDataset.validate_joint_compatibility = lambda self, lo, filepath: True
+
 
 def load_trainer(load_cfg, model, optimizer, scheduler, device, log_path):
     if (load_cfg is None) or (load_cfg["dir"] is None):
@@ -81,7 +85,7 @@ if __name__ == "__main__":
         pairs_txt,
         train_cfg["batch_size"],
         train_cfg["consq_n"],
-        shuffle=False, # True
+        shuffle=True,
         mask_option=cfg["train_data"]["mask"],
         device=args.device,
     )

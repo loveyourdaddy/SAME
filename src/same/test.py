@@ -34,6 +34,10 @@ from fairmotion.core import motion as motion_class
 from fairmotion.data import bvh
 from fairmotion.ops import math, conversions
 
+# TruebonesZoo 데이터에는 __TPOSE.npz가 없어 원본 조인트 검증이 전 클립을 버림.
+# 검증을 무력화해 전체 데이터를 추론에 사용 (any2any fork의 validate_joints=False와 동일).
+PairedDataset.validate_joint_compatibility = lambda self, lo, filepath: True
+
 def prepare_model_test(model_epoch, device):
     # device, printoptions
     tensor_utils.set_device(device)
