@@ -1,4 +1,4 @@
-import os, torch, random
+import os, math, torch, random
 import numpy as np
 from pathlib import Path
 from torch.utils.data import Dataset, Sampler, DataLoader
@@ -32,6 +32,55 @@ class PoseData:
     c: torch.BoolTensor # contact
     # [nDim]
     r: torch.Tensor # root trf
+
+
+def r5_to_r4(r):
+    """Collapse a 5-dim root feature [cos(dθ), sin(dθ), dx, dz, h] back to the
+    4-dim [dθ, dx, dz, h] this model assumes (rep_dim['r']=4).
+
+    Some preprocessing pipelines (e.g. Trueboness_processed_byVT) keep the facing
+    rotation delta as a (cos, sin) pair instead of the angle, giving r a width of
+    5. This is the exact inverse of the repo's own r_data construction
+    (motion_to_graph: dθ = arctan2(dsin, dcos)), so no information is lost. No-op
+    when r is already 4-dim (e.g. TruebonesZoo_processed_byJH).
+    """
+    if r is None:
+        return r
+    r = np.asarray(r)
+    if r.shape[-1] != 5:
+        return r
+    dtheta = np.arctan2(r[..., 1], r[..., 0])
+    return np.concatenate([dtheta[..., None], r[..., 2:5]], axis=-1).astype(
+        r.dtype, copy=False
+    )
+
+
+def convert_ms_dict_r5_to_r4(ms_dict):
+    """Match r5_to_r4 on the normalization stats: turn 5-dim (cos,sin,dx,dz,h)
+    root mean/std into 4-dim (θ,dx,dz,h). dx/dz/h stats are unchanged; the angle
+    mean/std come in closed form from the circular statistics of the (cos,sin)
+    means (mean angle = atan2(sin,cos); std = sqrt(-2 ln R), R = resultant length).
+    Only mean/std *consistency* matters — the same r_m/r_s are used to normalize
+    the input and de-normalize the output. No-op when r_m is already 4-dim.
+    """
+    if not isinstance(ms_dict, dict) or "r_m" not in ms_dict or "r_s" not in ms_dict:
+        return ms_dict
+    r_m = ms_dict["r_m"].reshape(-1)
+    r_s = ms_dict["r_s"].reshape(-1)
+    if r_m.numel() != 5:
+        return ms_dict
+    mean_cos, mean_sin = float(r_m[0]), float(r_m[1])
+    m_ang = math.atan2(mean_sin, mean_cos)
+    R = min(1.0, math.hypot(mean_cos, mean_sin))
+    s_ang = math.sqrt(max(-2.0 * math.log(max(R, 1e-8)), 1e-12))
+    out = dict(ms_dict)
+    out["r_m"] = torch.tensor(
+        [m_ang, float(r_m[2]), float(r_m[3]), float(r_m[4])], dtype=ms_dict["r_m"].dtype
+    )
+    out["r_s"] = torch.tensor(
+        [s_ang, float(r_s[2]), float(r_s[3]), float(r_s[4])], dtype=ms_dict["r_s"].dtype
+    )
+    return out
 
 
 def npz_2_data(lo, go, qb, edges, q, p, qv, pv, pprev, c, r):
@@ -104,6 +153,7 @@ class PairedDataset(Dataset):
             
         # new data
         # skel_data, pose_data_list
+        r = r5_to_r4(r)  # [cos,sin,dx,dz,h] (5) -> [dθ,dx,dz,h] (4) if needed
         sd, pdl = npz_2_data(lo, go, qb, edges, q, p, qv, pv, pprev, c, r)
 
         # update file info

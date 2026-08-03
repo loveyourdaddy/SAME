@@ -1,14 +1,10 @@
 """
 cd src
 python same/test.py --data_dir "train/motion/processed/" --model_epoch "250930_BIPEDS"
-python same/test.py --data_dir "train/motion/processed/" --model_epoch "251015_new_pairs"
-
-python same/test.py --data_dir "TruebonesZoo_processed_byJH/motion/processed/" --model_epoch "260718_truebone" --pairs_txt "pair.txt"
+python same/test.py --data_dir "Trueboness_processed_byVT/processed/" --model_epoch "260803_cfg_VT_split" --pairs_txt "truebones_vt_exact_test.txt"
 
 또는 test용 pair 파일이 따로 있다면 (pairs_txt의 모든 pair를 순회하며 retarget 후
 <out_dir>/pair<idx>__..__SRC/TGT/OUT.bvh + retarget_log.csv로 저장):
-python same/test.py --data_dir "TruebonesZoo_processed_byJH/motion/processed/" --model_epoch "260718_truebone" --pairs_txt "truebones_test.txt"
-data/TruebonesZoo_processed_byJH/motion/processed/truebones_vt_exact_test.txt
 """
 import argparse
 import csv
@@ -26,7 +22,7 @@ import numpy as np
 import torch
 from mypath import *
 from same.mymodel import make_load_model
-from same.mydataset import PairedDataset, get_mi_src_tgt_all_graph, npz_2_data
+from same.mydataset import PairedDataset, get_mi_src_tgt_all_graph, npz_2_data, convert_ms_dict_r5_to_r4
 from same.skel_pose_graph import SkelPoseGraph, rnd_mask
 from utils.skel_gen_utils import create_random_skel
 from conversions.graph_to_motion import graph_2_skel
@@ -52,6 +48,7 @@ def prepare_model_test(model_epoch, device):
 
     load_dir = os.path.join(RESULT_DIR, model_epoch.split("/")[0])
     ms_dict = torch.load(os.path.join(load_dir, "ms_dict.pt"))
+    ms_dict = convert_ms_dict_r5_to_r4(ms_dict)  # 5-dim (cos,sin,..) r -> 4-dim
 
     # set SkelPoseGraph class variables
     SkelPoseGraph.skel_cfg = cfg["representation"]["skel"]

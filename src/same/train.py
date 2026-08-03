@@ -1,7 +1,6 @@
 """
 export PYTHONPATH=/source/Inseo/SAME/src:$PYTHONPATH
-python same/train.py --exp "260718_truebone"
-python same/train.py --exp "260718_truebone_newsplit" --cfg "cfg_260718_truebone_split"
+python same/train.py --exp 260803_cfg_VT_split --cfg 260803_cfg_VT_split
 """
 
 import argparse, sys, yaml, gc, shutil
@@ -12,7 +11,7 @@ from IPython import embed
 
 from mypath import *
 from utils import file_io, tensor_utils, network_utils
-from same.mydataset import PairedDataset, get_paired_data_loader
+from same.mydataset import PairedDataset, get_paired_data_loader, convert_ms_dict_r5_to_r4
 from same.mymodel import Model, out_post_fwd
 from same.skel_pose_graph import SkelPoseGraph
 from same.loss import compute_loss
@@ -115,6 +114,7 @@ if __name__ == "__main__":
         os.path.join(data_dir, "ms_dict.pt"), os.path.join(save_dir, "ms_dict.pt")
     )
     ms_dict = torch.load(os.path.join(data_dir, "ms_dict.pt"))
+    ms_dict = convert_ms_dict_r5_to_r4(ms_dict)  # 5-dim (cos,sin,..) r -> 4-dim
 
     # set SkelPoseGraph class variables
     SkelPoseGraph.skel_cfg = cfg["representation"]["skel"]
