@@ -1,0 +1,13 @@
+bvhview
+bvhview.exe
+bvhview.html
+bvhview.js
+bvhview.wasm
+bvhview.zip
+examples/*
+*.log
+*__pycache__*
+*.exe
+
+# third-party sources cloned locally (raylib/raygui, ~1.1GB, own git repos)
+raylib/
