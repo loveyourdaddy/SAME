@@ -1,11 +1,16 @@
 """
-cd src
-python same/test.py --data_dir "train/motion/processed/" --model_epoch "250930_BIPEDS"
-python same/test.py --data_dir "Trueboness_processed_byVT/processed/" --model_epoch "260803_cfg_VT_split" --pairs_txt "truebones_vt_exact_test.txt"
+# 1) produce BVH + retarget_log.csv
+python src/same/test.py \
+    --data_dir "Trueboness_processed_byVT/processed/" \
+    --model_epoch "260803_cfg_VT_split" \
+    --pairs_txt "truebones_vt_exact_test.txt"
 
-또는 test용 pair 파일이 따로 있다면 (pairs_txt의 모든 pair를 순회하며 retarget 후
-<out_dir>/pair<idx>__..__SRC/TGT/OUT.bvh + retarget_log.csv로 저장):
+# 2) score every OK pair from that run (GT = the TGT.bvh test.py saved)
+
+# 3) render: render파일 수정후
+/home/inseo/Github/BVHView/render_bvhs.sh /home/inseo/Github/SAME_original/result/260803_cfg_VT_split/test/src
 """
+
 import argparse
 import csv
 import os
@@ -284,6 +289,15 @@ if __name__ == "__main__":
                 bvh.save(out_motion, out_bvh_fp)
             dt = time.time() - t0
             print(f"[{idx}] OK  {src_rel} -> {tgt_rel}  ({dt:.2f}s)")
+            
+            # out 파일을 tgt 폴더에 복사하기.
+            tgt_dir = os.path.join(out_dir, "tgt")
+            os.makedirs(tgt_dir, exist_ok=True)
+            tgt_fp = os.path.join(tgt_dir, f"{stem}__TGT.bvh")
+            if not os.path.exists(tgt_fp):
+                import shutil
+                if os.path.exists(out_bvh_fp):
+                    shutil.copy(out_bvh_fp, tgt_fp)
         except Exception as e:
             import traceback
             status, msg = "FAIL", repr(e)
