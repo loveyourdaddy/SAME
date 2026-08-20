@@ -30,7 +30,10 @@ ifeq ($(PLATFORM),PLATFORM_DESKTOP)
         else
             CFLAGS ?= $(DEFINES) -Wall -Wno-format-truncation -g $(INCLUDE_DIR) $(LIBRARY_DIR)
         endif
-        LIBS = -lraylib -lGL -lm -lpthread -ldl -lrt
+        # -lX11 is required since raylib's GetClipboardImage() calls Xlib directly.
+        # If the linker also wants Xrandr/Xinerama/Xcursor/Xi symbols, append:
+        #   -lXrandr -lXinerama -lXcursor -lXi -lXxf86vm
+        LIBS = -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
     endif
     
     ifeq ($(findstring MINGW,$(PLATFORM_OS)),MINGW)
