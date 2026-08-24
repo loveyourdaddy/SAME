@@ -174,13 +174,13 @@ class PairedDataset(Dataset):
             orig_nFrame = self.frame_cnts[orig_fi]
 
             if orig_nFrame != nFrame:
-                # 프레임 수 불일치 - 데이터 제외
-                print(f"[SKIP] Frame count mismatch (mi={mi}):")
-                print(f"  Original: {self.filepaths[orig_fi]} ({orig_nFrame} frames)")
-                print(f"  Current:  {filepath} ({nFrame} frames)")
-                print(f"  Motion:   {motion_name}")
-                return  
-            
+                # 프레임 수 불일치 - 스킵하지 않고 그대로 보관.
+                # 샘플링(train)·시퀀스 추출(test) 시 motion-set 내 더 짧은 clip
+                # 길이까지만 사용해 정렬한다 (아래 PairConsqSampler /
+                # get_mi_src_tgt_all 에서 min 길이로 crop).
+                print(f"[CROP] Frame count mismatch (mi={mi}): "
+                      f"{orig_nFrame} vs {nFrame} frames ({motion_name}) -> use min")
+
             if self.copy_orig_contact:
                 # copy contact from the original motion (optional)
                 lf, rf = find_feet(sd)
@@ -237,11 +237,14 @@ class PairedDataset(Dataset):
         # source 이름으로 분류(종, 모션도 동일해야 같은 set)
         src_id_map = {}   # src_rel -> mi
         mi_files = {}     # mi -> set of files already in this mi
+        n_pair_lines = 0     # non-empty lines in the pair file
+        n_clip_attempts = 0  # add_data_from_npz calls (src + dst)
         with open(pair_path, "r") as pair_file:
             for line in pair_file:
                 if line.strip() == "":
                     continue
                 src_rel_path, dst_rel_path = line.strip().split()
+                n_pair_lines += 1
 
                 # src id 찾기 (없으면 넣기)
                 if src_rel_path in src_id_map:
@@ -254,6 +257,7 @@ class PairedDataset(Dataset):
                     bvh_fp = os.path.join(
                         bvh_prefix, Path(src_rel_path).with_suffix("")
                     )
+                    n_clip_attempts += 1
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
 
                 # dst path가 src에 없다면 motion index에 추가하기
@@ -270,8 +274,17 @@ class PairedDataset(Dataset):
                     bvh_fp = os.path.join(
                         bvh_prefix, Path(dst_rel_path).with_suffix("")
                     )
+                    n_clip_attempts += 1
                     self.add_data_from_npz(src_id, npz_fp, bvh_fp)
                 print(f"[data] {src_rel_path} -> {dst_rel_path}")
+
+        # loading summary (used for the training-start data report)
+        self.load_stats = {
+            "pair_lines": n_pair_lines,
+            "clip_attempts": n_clip_attempts,
+            "clips_loaded": len(self.filepaths),
+            "clips_skipped": n_clip_attempts - len(self.filepaths),
+        }
     
     # load data 
     def get_mi_ri_fi_graph(self, mi, ri, frame):
@@ -295,7 +308,10 @@ class PairedDataset(Dataset):
     def get_mi_src_tgt_all(self, mi, src_ri, tgt_ri):
         assert src_ri >= 0 and src_ri < len(self.mi_ri_2_fi[mi])
         assert tgt_ri >= 0 and tgt_ri < len(self.mi_ri_2_fi[mi])
-        frame_cnt = self.frame_cnts[self.mi_ri_2_fi[mi][0]]
+        # crop to the shorter of the two clips (lengths may differ within a set)
+        fi_src = self.mi_ri_2_fi[mi][src_ri]
+        fi_tgt = self.mi_ri_2_fi[mi][tgt_ri]
+        frame_cnt = min(self.frame_cnts[fi_src], self.frame_cnts[fi_tgt])
         # 모든 프레임에 대해서 (src graph, tgt_graph)
         batch = [self[mi, src_ri, tgt_ri, frame] for frame in range(frame_cnt)]
         return batch, frame_cnt
@@ -349,8 +365,12 @@ class PairConsqSampler(Sampler):
         # valid frames(considering consq_n)
         self.valid_mi_frames = np.zeros((0, 2), dtype=int)
         for mi in range(len(self.dataset.mi_ri_2_fi)):
-            nFrame = self.dataset.frame_cnts[self.dataset.mi_ri_2_fi[mi][0]]
+            # crop to the shortest clip in this motion-set (lengths may differ)
+            nFrame = min(self.dataset.frame_cnts[fi]
+                         for fi in self.dataset.mi_ri_2_fi[mi])
             valid_nF = nFrame - self.consq_n + 1
+            if valid_nF <= 0:   # shortest clip too short for one window
+                continue
             new_mi = np.array([mi] * valid_nF)
             new_frames = np.arange(0, valid_nF)
             new_mi_frames = np.column_stack((new_mi, new_frames))
@@ -432,10 +452,33 @@ def PairedGraph_collate_fn(batch, mask_option=[], consq_n=-1, device="cpu"):
     return src_batch.to(device), tgt_batch.to(device)
 
 
+def report_load_stats(ds, sampler, dl, batch_size, consq_n, pairs_txt):
+    """Print, at training start, how much of the pair list is actually used."""
+    st = getattr(ds, "load_stats", {})
+    clips_per_mi = [len(m) for m in ds.mi_ri_2_fi]
+    n_mi = len(clips_per_mi)
+    n_multi = sum(1 for c in clips_per_mi if c >= 2)
+    n_single = n_mi - n_multi
+    n_windows = len(sampler.valid_mi_frames)
+    n_iter = len(dl)
+    print("======================= DATA REPORT =======================")
+    print(f"[data] pair file         : {pairs_txt}")
+    print(f"[data] pair lines        : {st.get('pair_lines', '?')}")
+    print(f"[data] clips loaded/used : {st.get('clips_loaded', '?')}  "
+          f"(skipped {st.get('clips_skipped', '?')} on frame-count mismatch "
+          f"of {st.get('clip_attempts', '?')} attempts)")
+    print(f"[data] motion-sets (mi)  : {n_mi}  "
+          f"(>=2 clips: {n_multi} cross-retarget, 1 clip: {n_single} self-recon)")
+    print(f"[data] species           : {len(ds.species2fi.keys())}")
+    print(f"[data] train windows     : {n_windows}  (consq_n={consq_n})")
+    print(f"[data] iters/epoch       : {n_iter}  (batch_size={batch_size})  "
+          f"-> ~{n_iter * batch_size} samples/epoch")
+    print("===========================================================")
+
+
 def get_paired_data_loader(data_dir, pairs_txt, batch_size, consq_n, shuffle, mask_option, device):
     ds = PairedDataset()
     ds.load_data_dir_pairs(data_dir, pairs_txt) # pair 데이터 만들어서 저장하기. mi_ri_2_fi
-    print(f"dataset: {len(ds.species2fi.keys())}")
 
     sampler = PairConsqSampler(
         ds, batch_size=batch_size, consq_n=consq_n, shuffle=shuffle
@@ -451,6 +494,7 @@ def get_paired_data_loader(data_dir, pairs_txt, batch_size, consq_n, shuffle, ma
             device=device,
         ),
     )
+    report_load_stats(ds, sampler, dl, batch_size, consq_n, pairs_txt)
     return dl
 
 

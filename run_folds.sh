@@ -5,7 +5,7 @@
 #
 # examples
 #   conda activate same
-#   ./run_folds.sh                  # folds 0 1 2 on cuda:0
+#   ./run_folds.sh "0 1 2"                 # folds 0 1 2 on cuda:0
 #
 # Without activating the env first, point PYTHON at it:
 #   PYTHON=~/anaconda3/envs/same/bin/python ./run_folds.sh
