@@ -10,8 +10,8 @@ Metrics - With pseudo-GT (OUT vs TGT, same skeleton):
   mpjpe           [cm]     Global Mean Per-Joint Position Error
   root_rel_mpjpe  [cm]     Root-relative Mean Per-Joint Position Error
   rot_err         [deg]    Local joint rotation geodesic error
-  contact_slip    [cm]     Slippage: OUT motion during TGT contact (lower better;
-                           was 'contact_consistency')
+  contact_violation [cm]   OUT movement during TGT contact = violation of the GT
+                           contact schedule (lower better; was contact_slip)
 
 Metrics - OUT only:
   jerk            [cm/s^3] Mean joint jitter (3rd-order finite difference)
@@ -30,6 +30,8 @@ Metrics - needs SOURCE (OUT vs SRC):
                            Taken on root-relative positions over bins >= 1 Hz
                            (--freq_min); see compute_freq_alignment for what
                            that cutoff does and does not measure.
+  
+  (removed)
   freq_alignment_raw [%]   The same on global positions with no band cutoff, i.e.
                            the paper's unrestricted form. Reported for reference
                            only: it is dominated by whole-clip drift and cannot
@@ -144,18 +146,19 @@ def compute_rot_err(out_rot: np.ndarray, tgt_rot: np.ndarray) -> float:
     return float(np.degrees(np.arccos(cos_a)).mean())
 
 
-def compute_contact_slip(
+def compute_contact_violation(
     out_pos: np.ndarray,
     tgt_pos: np.ndarray,
     H: float = CONTACT_H_CM,
 ) -> float:
     """
-    Contact slip [cm]  (formerly 'contact_consistency'; a slippage metric).
-    Applies TGT-derived soft contact weights to OUT joint velocities: how much the
-    output slides during frames where the target ground-truth has contact.
+    Contact violation [cm]  (formerly 'contact_slip' / 'contact_consistency').
+    How much the output violates the target ground-truth's contact schedule:
+    TGT-derived soft contact weights times OUT joint velocities, i.e. output
+    movement during frames where the GT has contact.
 
     Lower is better;
-        0 = no movement during contact (no slippage)
+        0 = no movement during contact (schedule fully respected)
     """
     T = min(len(out_pos), len(tgt_pos))
     if T < 2:
@@ -359,7 +362,7 @@ def evaluate_pair(out_bvh: str, tgt_bvh: str = None, src_bvh: str = None,
         metrics["mpjpe"]                = compute_mpjpe(out_pos, tgt_pos)
         metrics["root_rel_mpjpe"]       = compute_root_rel_mpjpe(out_pos, tgt_pos)
         metrics["rot_err"]              = compute_rot_err(out_rot, tgt_rot)
-        metrics["contact_slip"]         = compute_contact_slip(out_pos, tgt_pos)
+        metrics["contact_violation"]         = compute_contact_violation(out_pos, tgt_pos)
 
     return metrics
 
@@ -528,17 +531,18 @@ def find_pairs(result_dir: str, gt_dir: str = None):
 
 # ------------------------------- main --------------------------------
 
-GT_KEYS    = ["mpjpe", "root_rel_mpjpe", "rot_err", "contact_slip"]
+GT_KEYS    = ["mpjpe", "root_rel_mpjpe", "rot_err", "contact_violation"]
 OUT_KEYS   = ["jerk", "foot_skating", "ground_pen"]
-SRC_KEYS   = ["freq_alignment", "freq_alignment_raw", "contact_consistency"]
+SRC_KEYS   = ["freq_alignment", "contact_consistency"] # "freq_alignment_raw", 
 ALL_KEYS   = GT_KEYS + OUT_KEYS + SRC_KEYS
 UNITS      = {
     "mpjpe": "cm", "root_rel_mpjpe": "cm", "rot_err": "deg",
-    "contact_slip": "cm",
+    "contact_violation": "cm",
     "jerk": "cm/s^3", "foot_skating": "cm", "ground_pen": "cm",
-    "freq_alignment": "%", "freq_alignment_raw": "%",
+    "freq_alignment": "%", 
     "contact_consistency": "%",
 }
+# "freq_alignment_raw": "%",
 
 
 def main():
@@ -652,7 +656,7 @@ def main():
         has_gt = "mpjpe" in m
         gt_str = (
             f"mpjpe={m['mpjpe']:.2f}cm  rr={m['root_rel_mpjpe']:.2f}cm  "
-            f"rot={m['rot_err']:.2f}deg  slip={m['contact_slip']:.4f}cm"
+            f"rot={m['rot_err']:.2f}deg  viol={m['contact_violation']:.4f}cm"
             if has_gt else "(no GT)"
         )
         def _pct(key):
@@ -664,8 +668,7 @@ def main():
             f"gp={m['ground_pen']:.4f}cm"
         )
         src_str = (
-            f"freq_align={_pct('freq_alignment')} (raw {_pct('freq_alignment_raw')})  "
-            f"contact_con={_pct('contact_consistency')}"
+            f"freq_align={_pct('freq_alignment')} contact_con={_pct('contact_consistency')}" # (raw {_pct('freq_alignment_raw')}) 
         )
         print(f"  [{i:03d}] {label}")
         print(f"         GT   : {gt_str}")
