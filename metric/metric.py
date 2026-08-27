@@ -10,7 +10,8 @@ Metrics - With pseudo-GT (OUT vs TGT, same skeleton):
   mpjpe           [cm]     Global Mean Per-Joint Position Error
   root_rel_mpjpe  [cm]     Root-relative Mean Per-Joint Position Error
   rot_err         [deg]    Local joint rotation geodesic error
-  contact_consistency [cm]  Mean contact consistency (0 = no contact)
+  contact_slip    [cm]     Slippage: OUT motion during TGT contact (lower better;
+                           was 'contact_consistency')
 
 Metrics - OUT only:
   jerk            [cm/s^3] Mean joint jitter (3rd-order finite difference)
@@ -18,6 +19,10 @@ Metrics - OUT only:
   ground_pen      [cm]     Mean ground penetration depth (0 = no penetration)
 
 Metrics - needs SOURCE (OUT vs SRC):
+  contact_consistency [%]  How well OUT preserves the SOURCE ground-contact timing
+                           (Motion2Motion 'contact con.'; 100 = identical grounding
+                           pattern, higher better). Height-based proxy, scale/joint
+                           invariant; needs the source.
   freq_alignment  [%]      PSD cosine similarity vs the source motion, x100
                            (Motion2Motion 'freq. align'; 100 = identical spectrum,
                            higher is better). Needs the source; scale/joint-count
@@ -139,16 +144,18 @@ def compute_rot_err(out_rot: np.ndarray, tgt_rot: np.ndarray) -> float:
     return float(np.degrees(np.arccos(cos_a)).mean())
 
 
-def compute_contact_consistency(
+def compute_contact_slip(
     out_pos: np.ndarray,
     tgt_pos: np.ndarray,
     H: float = CONTACT_H_CM,
 ) -> float:
     """
-    Contact consistency [cm].
-    Applies TGT-derived soft contact weights to OUT joint velocities.
-    Measures how much the output moves during frames where TGT has contact.
-    Lower is better; 0 = no movement during contact = perfect consistency.
+    Contact slip [cm]  (formerly 'contact_consistency'; a slippage metric).
+    Applies TGT-derived soft contact weights to OUT joint velocities: how much the
+    output slides during frames where the target ground-truth has contact.
+
+    Lower is better;
+        0 = no movement during contact (no slippage)
     """
     T = min(len(out_pos), len(tgt_pos))
     if T < 2:
@@ -157,6 +164,41 @@ def compute_contact_consistency(
     c_tgt = np.clip(2.0 - np.power(2.0, h_tgt / H), 0.0, 1.0)   # soft contact [T-1, J]
     v_out = np.linalg.norm(out_pos[1:T] - out_pos[:T-1], axis=-1) # OUT speed [T-1, J]
     return float((v_out * c_tgt).mean())
+
+
+def _contact_signal(pos: np.ndarray) -> np.ndarray:
+    """Per-frame 'groundedness' in [0,1], scale/offset/skeleton-invariant.
+
+    Takes the lowest joint's height each frame (proxy for how close the body is to
+    the ground) and min-max normalizes it over the clip, inverted so the
+    most-grounded frame -> 1 and the most-airborne frame -> 0. Comparing this
+    across two motions asks WHEN each is at its lowest, independent of absolute
+    height, units, or body scale (which differ between source and target).
+    """
+    min_h = pos[:, :, 1].min(axis=1)             # [T] lowest joint height per frame
+    g = -min_h                                    # higher = more grounded
+    lo, hi = float(g.min()), float(g.max())
+    return (g - lo) / (hi - lo + 1e-8)            # [T] in [0,1]
+
+
+def compute_contact_consistency(out_pos: np.ndarray, src_pos: np.ndarray = None) -> float:
+    """Contact consistency [%]: how well the OUTPUT preserves the SOURCE's
+    ground-contact timing (Motion2Motion 'contact con.').
+
+    Compares the per-frame groundedness signal (see _contact_signal) of source and
+    output and reports 100*(1 - mean|c_src - c_out|). Higher is better: 100 =
+    identical grounding pattern over time. Because each signal is min-max
+    normalized per motion, this is invariant to absolute height, units, and body
+    scale, so the meter-unit dataset source bvh compares fine against the cm
+    output. Height-based proxy (no manual contact-bone labels). Needs the source;
+    returns nan if unavailable.
+    """
+    if src_pos is None or len(out_pos) < 2 or len(src_pos) < 2:
+        return float("nan")
+    T = min(len(out_pos), len(src_pos))
+    c_out = _contact_signal(out_pos[:T])
+    c_src = _contact_signal(src_pos[:T])
+    return float((1.0 - np.abs(c_src - c_out).mean()) * 100.0)
 
 
 # ------------------------------ No-GT metrics ------------------------
@@ -303,10 +345,11 @@ def evaluate_pair(out_bvh: str, tgt_bvh: str = None, src_bvh: str = None,
     metrics["jerk"]           = compute_jerk(out_pos)
     metrics["foot_skating"]   = compute_foot_skating(out_pos)
     metrics["ground_pen"]     = compute_ground_pen(out_pos)
-    # source-vs-output frequency alignment (nan if no source)
+    # source-vs-output metrics (nan if no source)
     metrics["freq_alignment"] = compute_freq_alignment(out_pos, src_pos)
     metrics["freq_alignment_raw"] = compute_freq_alignment(
         out_pos, src_pos, f_min=0.0, root_relative=False)
+    metrics["contact_consistency"] = compute_contact_consistency(out_pos, src_pos)
 
     # GT metrics
     if tgt_bvh and os.path.exists(tgt_bvh):
@@ -316,7 +359,7 @@ def evaluate_pair(out_bvh: str, tgt_bvh: str = None, src_bvh: str = None,
         metrics["mpjpe"]                = compute_mpjpe(out_pos, tgt_pos)
         metrics["root_rel_mpjpe"]       = compute_root_rel_mpjpe(out_pos, tgt_pos)
         metrics["rot_err"]              = compute_rot_err(out_rot, tgt_rot)
-        metrics["contact_consistency"]  = compute_contact_consistency(out_pos, tgt_pos)
+        metrics["contact_slip"]         = compute_contact_slip(out_pos, tgt_pos)
 
     return metrics
 
@@ -485,15 +528,16 @@ def find_pairs(result_dir: str, gt_dir: str = None):
 
 # ------------------------------- main --------------------------------
 
-GT_KEYS    = ["mpjpe", "root_rel_mpjpe", "rot_err", "contact_consistency"]
-NO_GT_KEYS = ["jerk", "foot_skating", "ground_pen", "freq_alignment",
-              "freq_alignment_raw"]
-ALL_KEYS   = GT_KEYS + NO_GT_KEYS
+GT_KEYS    = ["mpjpe", "root_rel_mpjpe", "rot_err", "contact_slip"]
+OUT_KEYS   = ["jerk", "foot_skating", "ground_pen"]
+SRC_KEYS   = ["freq_alignment", "freq_alignment_raw", "contact_consistency"]
+ALL_KEYS   = GT_KEYS + OUT_KEYS + SRC_KEYS
 UNITS      = {
     "mpjpe": "cm", "root_rel_mpjpe": "cm", "rot_err": "deg",
-    "contact_consistency": "cm",
+    "contact_slip": "cm",
     "jerk": "cm/s^3", "foot_skating": "cm", "ground_pen": "cm",
     "freq_alignment": "%", "freq_alignment_raw": "%",
+    "contact_consistency": "%",
 }
 
 
@@ -608,7 +652,7 @@ def main():
         has_gt = "mpjpe" in m
         gt_str = (
             f"mpjpe={m['mpjpe']:.2f}cm  rr={m['root_rel_mpjpe']:.2f}cm  "
-            f"rot={m['rot_err']:.2f}deg  cc={m['contact_consistency']:.4f}cm"
+            f"rot={m['rot_err']:.2f}deg  slip={m['contact_slip']:.4f}cm"
             if has_gt else "(no GT)"
         )
         def _pct(key):
@@ -617,12 +661,16 @@ def main():
 
         out_str = (
             f"jerk={m['jerk']:.2f}  fs={m['foot_skating']:.4f}cm  "
-            f"gp={m['ground_pen']:.4f}cm  freq_align={_pct('freq_alignment')}"
-            f"  (raw {_pct('freq_alignment_raw')})"
+            f"gp={m['ground_pen']:.4f}cm"
+        )
+        src_str = (
+            f"freq_align={_pct('freq_alignment')} (raw {_pct('freq_alignment_raw')})  "
+            f"contact_con={_pct('contact_consistency')}"
         )
         print(f"  [{i:03d}] {label}")
         print(f"         GT   : {gt_str}")
         print(f"         out  : {out_str}")
+        print(f"         src  : {src_str}")
 
     # -- write CSV --
     fieldnames = ["idx", "label"] + ALL_KEYS
