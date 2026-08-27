@@ -51,9 +51,9 @@ Usage:
 cd ..
 python metric/metric.py \
     --result_dir result/260803_cfg_VT_split/test \
-    --gt_dir result/260803_cfg_VT_split/test \
-    --pairs_txt  data/Trueboness_processed_byVT/processed/truebones_vt_exact_test.txt \
-    --out_csv result/260803_cfg_VT_split/test/metrics_test.csv
+    --gt_dir data/Trueboness_processed_byVT/augmented \
+    --pairs_txt  data/Trueboness_processed_byVT/processed/truebones_vt_exact_test.txt
+    
 # 3) render: render파일 수정후
 """
 
@@ -348,11 +348,12 @@ def evaluate_pair(out_bvh: str, tgt_bvh: str = None, src_bvh: str = None,
     metrics["jerk"]           = compute_jerk(out_pos)
     metrics["foot_skating"]   = compute_foot_skating(out_pos)
     metrics["ground_pen"]     = compute_ground_pen(out_pos)
+    
     # source-vs-output metrics (nan if no source)
     metrics["freq_alignment"] = compute_freq_alignment(out_pos, src_pos)
-    metrics["freq_alignment_raw"] = compute_freq_alignment(
-        out_pos, src_pos, f_min=0.0, root_relative=False)
     metrics["contact_consistency"] = compute_contact_consistency(out_pos, src_pos)
+    # metrics["freq_alignment_raw"] = compute_freq_alignment(
+    #     out_pos, src_pos, f_min=0.0, root_relative=False)
 
     # GT metrics
     if tgt_bvh and os.path.exists(tgt_bvh):
@@ -362,7 +363,7 @@ def evaluate_pair(out_bvh: str, tgt_bvh: str = None, src_bvh: str = None,
         metrics["mpjpe"]                = compute_mpjpe(out_pos, tgt_pos)
         metrics["root_rel_mpjpe"]       = compute_root_rel_mpjpe(out_pos, tgt_pos)
         metrics["rot_err"]              = compute_rot_err(out_rot, tgt_rot)
-        metrics["contact_violation"]         = compute_contact_violation(out_pos, tgt_pos)
+        # metrics["contact_violation"]         = compute_contact_violation(out_pos, tgt_pos)
 
     return metrics
 
@@ -656,7 +657,7 @@ def main():
         has_gt = "mpjpe" in m
         gt_str = (
             f"mpjpe={m['mpjpe']:.2f}cm  rr={m['root_rel_mpjpe']:.2f}cm  "
-            f"rot={m['rot_err']:.2f}deg  viol={m['contact_violation']:.4f}cm"
+            f"rot={m['rot_err']:.2f}deg" # viol={m['contact_violation']:.4f}cm
             if has_gt else "(no GT)"
         )
         def _pct(key):

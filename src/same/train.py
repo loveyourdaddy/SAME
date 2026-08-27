@@ -1,6 +1,6 @@
 """
 export PYTHONPATH=/source/Inseo/SAME/src:$PYTHONPATH
-python same/train.py --exp 260803_cfg_VT_split --cfg 260803_cfg_VT_split
+python same/train.py --exp 260803_cfg_VT_split --cfg 260803_cfg_VT_fold0
 """
 
 import argparse, sys, yaml, gc, shutil

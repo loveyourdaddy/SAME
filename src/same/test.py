@@ -8,7 +8,8 @@ python src/same/test.py \
 # 2) score every OK pair from that run (GT = the TGT.bvh test.py saved)
 
 # 3) render: render파일 수정후
-/home/inseo/Github/BVHView/render_bvhs.sh /home/inseo/Github/SAME_original/result/260803_cfg_VT_split/test/src
+BVHView/render_bvhs.sh /home/inseo/Github/SAME_original/result/260803_cfg_VT_split/test/src
+/home/inseo/Github/BVHView/render_bvhs_headless.sh /home/inseo/Github/SAME_original/result/260803_cfg_VT_split/test/src
 """
 
 import argparse
