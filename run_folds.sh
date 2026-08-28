@@ -1,22 +1,15 @@
 #!/bin/bash
 # Train SAME on the VT group folds, one fold after another.
-#
 #   ./run_folds.sh [folds] [device] [seed]
-#
+
 # examples
 #   conda activate same
 #   ./run_folds.sh "0 1 2"                 # folds 0 1 2 on cuda:0
-#
-# Without activating the env first, point PYTHON at it:
-#   PYTHON=~/anaconda3/envs/same/bin/python ./run_folds.sh
-#   ./run_folds.sh "0 2" cuda:0     # only folds 0 and 2
-#
+
 # Each fold reads config/260803_cfg_VT_fold<N>.yml (which differs from the
 # 260803_cfg_VT_split run only in train_data.pairs_txt) and writes
 #   result/260803_cfg_VT_fold<N>/{model_*.pt,last_model.pt,logs/,train.log}
-#
-# Folds run sequentially on purpose: one 10GB GPU will not hold three
-# batch_size=128 runs at once.
+
 set -eo pipefail
 
 FOLDS=${1:-"0 1 2"}

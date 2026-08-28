@@ -146,29 +146,6 @@ def compute_rot_err(out_rot: np.ndarray, tgt_rot: np.ndarray) -> float:
     return float(np.degrees(np.arccos(cos_a)).mean())
 
 
-def compute_contact_violation(
-    out_pos: np.ndarray,
-    tgt_pos: np.ndarray,
-    H: float = CONTACT_H_CM,
-) -> float:
-    """
-    Contact violation [cm]  (formerly 'contact_slip' / 'contact_consistency').
-    How much the output violates the target ground-truth's contact schedule:
-    TGT-derived soft contact weights times OUT joint velocities, i.e. output
-    movement during frames where the GT has contact.
-
-    Lower is better;
-        0 = no movement during contact (schedule fully respected)
-    """
-    T = min(len(out_pos), len(tgt_pos))
-    if T < 2:
-        return float("nan")
-    h_tgt = tgt_pos[1:T, :, 1]                                   # y-height of TGT
-    c_tgt = np.clip(2.0 - np.power(2.0, h_tgt / H), 0.0, 1.0)   # soft contact [T-1, J]
-    v_out = np.linalg.norm(out_pos[1:T] - out_pos[:T-1], axis=-1) # OUT speed [T-1, J]
-    return float((v_out * c_tgt).mean())
-
-
 def _contact_signal(pos: np.ndarray) -> np.ndarray:
     """Per-frame 'groundedness' in [0,1], scale/offset/skeleton-invariant.
 
@@ -352,8 +329,6 @@ def evaluate_pair(out_bvh: str, tgt_bvh: str = None, src_bvh: str = None,
     # source-vs-output metrics (nan if no source)
     metrics["freq_alignment"] = compute_freq_alignment(out_pos, src_pos)
     metrics["contact_consistency"] = compute_contact_consistency(out_pos, src_pos)
-    # metrics["freq_alignment_raw"] = compute_freq_alignment(
-    #     out_pos, src_pos, f_min=0.0, root_relative=False)
 
     # GT metrics
     if tgt_bvh and os.path.exists(tgt_bvh):
@@ -532,18 +507,16 @@ def find_pairs(result_dir: str, gt_dir: str = None):
 
 # ------------------------------- main --------------------------------
 
-GT_KEYS    = ["mpjpe", "root_rel_mpjpe", "rot_err", "contact_violation"]
+GT_KEYS    = ["mpjpe", "root_rel_mpjpe", "rot_err"]
 OUT_KEYS   = ["jerk", "foot_skating", "ground_pen"]
-SRC_KEYS   = ["freq_alignment", "contact_consistency"] # "freq_alignment_raw", 
+SRC_KEYS   = ["freq_alignment", "contact_consistency"]
 ALL_KEYS   = GT_KEYS + OUT_KEYS + SRC_KEYS
 UNITS      = {
     "mpjpe": "cm", "root_rel_mpjpe": "cm", "rot_err": "deg",
-    "contact_violation": "cm",
     "jerk": "cm/s^3", "foot_skating": "cm", "ground_pen": "cm",
     "freq_alignment": "%", 
     "contact_consistency": "%",
 }
-# "freq_alignment_raw": "%",
 
 
 def main():
@@ -596,8 +569,9 @@ def main():
         # For a cm-exact GT, pass --gt_dir <run>/test instead.
         gt_dir = args.gt_dir
         if gt_dir is None:
+            # GT cand: bvh in augmented folder
             cand = os.path.join(os.path.dirname(os.path.dirname(
-                os.path.abspath(args.pairs_txt))), "bvh") # augmented
+                os.path.abspath(args.pairs_txt))), "bvh")
             if os.path.isdir(cand):
                 gt_dir = cand
                 print(f"[pairs_txt] --gt_dir not set; defaulting to dataset bvh: {gt_dir}")
@@ -657,7 +631,7 @@ def main():
         has_gt = "mpjpe" in m
         gt_str = (
             f"mpjpe={m['mpjpe']:.2f}cm  rr={m['root_rel_mpjpe']:.2f}cm  "
-            f"rot={m['rot_err']:.2f}deg" # viol={m['contact_violation']:.4f}cm
+            f"rot={m['rot_err']:.2f}deg" 
             if has_gt else "(no GT)"
         )
         def _pct(key):

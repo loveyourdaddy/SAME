@@ -39,7 +39,9 @@ echo ""
 echo "=== [2/2] evaluating metrics (metric.py) ==="
 python metric/metric.py \
     --result_dir "$OUT_DIR" \
-    --out_csv "$OUT_DIR/metrics.csv"
+    --gt_dir data/Trueboness_processed_byVT/augmented \
+    --pairs_txt  data/Trueboness_processed_byVT/processed/truebones_vt_groups_fold0_test.txt
+    # --out_csv "$OUT_DIR/metrics.csv"
 
 echo ""
 echo "=== done -> $OUT_DIR/metrics.csv ==="
