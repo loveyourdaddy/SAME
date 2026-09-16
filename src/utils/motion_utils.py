@@ -264,17 +264,17 @@ def motion_normalize_h2s(motion, alternative_map={}, handle_penetration=True):
         lt = "LeftToeBase_End" if "LeftToeBase_End" in joint_names else "LeftToe_End"
         rt = "RightToeBase_End" if "RightToeBase_End" in joint_names else "RightToe_End"
         if not (lt in joint_names) or not (rt in joint_names):
-            print("handle penetration Err")
-            embed()
-            exit()
-        # transform
-        lty = tpose.get_transform(lt, local=False)[1, 3]
-        rty = tpose.get_transform(rt, local=False)[1, 3]
-        if (lty + rty) / 2 < 0:
-            print("handle penetrating t-pose")
-            print(motion.name)
-            # embed()
-            transform_poses([tpose], conversions.p2T([0, -(lty + rty) / 2.0, 0]))
+            # non-humanoid skeleton (e.g. Truebones animals) has no toe joints;
+            # skip toe-based penetration handling instead of dropping into a debugger
+            pass
+        else:
+            # transform
+            lty = tpose.get_transform(lt, local=False)[1, 3]
+            rty = tpose.get_transform(rt, local=False)[1, 3]
+            if (lty + rty) / 2 < 0:
+                print("handle penetrating t-pose")
+                print(motion.name)
+                transform_poses([tpose], conversions.p2T([0, -(lty + rty) / 2.0, 0]))
 
     n_motion = motion_normalize(motion, tpose)
     n_tpose = n_motion.poses[0]

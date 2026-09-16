@@ -167,7 +167,7 @@ def skel_2_graph(skel):
 
 def motion_2_graph(motion, normalized=False):
     if not normalized:
-        motion, tpose = motion_normalize_h2s(motion, False)  # normalize motion
+        motion, tpose = motion_normalize_h2s(motion)  # normalize motion (default map={})
     # skel_state, poses_state = motion_2_states
     (lo, go, qb, edges), (q, p, r, pv, qv, pprev, c) = motion_2_states(motion)
     skel_data, pose_list = npz_2_data(lo, go, qb, edges, q, p, qv, pv, pprev, c, r)

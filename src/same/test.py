@@ -249,6 +249,10 @@ if __name__ == "__main__":
     out_dir = args.out_dir or os.path.join(RESULT_DIR, args.model_epoch.split("/")[0], "test")
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
+    # OUT bvh go here, named <Src>__TO__<Tgt>.bvh (matches collect_outputs.py /
+    # metric.py's out/bvh layout)
+    bvh_out_dir = os.path.join(out_dir, "out", "bvh")
+    os.makedirs(bvh_out_dir, exist_ok=True)
 
     log_path = os.path.join(out_dir, "retarget_log.csv")
     write_header = not os.path.exists(log_path)
@@ -276,29 +280,16 @@ if __name__ == "__main__":
                 model, src_batch, tgt_batch, ms_dict, out_rep_cfg, consq_n,
             )
 
-            src_motion = scale_motion(src_motion, args.unit_scale)
-            tgt_motion = scale_motion(tgt_motion, args.unit_scale)
+            # save only OUT, directly in the out/bvh/ layout with the template name
+            # <SourceAnimal>__<SourceAction>__TO__<TargetAnimal>__<TargetAction>.bvh
             out_motion = scale_motion(out_motion, args.unit_scale)
 
-            stem = f"pair{idx:06d}__{_safe_name(src_rel)}__TO__{_safe_name(tgt_rel)}"
-            src_bvh_fp = os.path.join(out_dir, f"{stem}__SRC.bvh")
-            tgt_bvh_fp = os.path.join(out_dir, f"{stem}__TGT.bvh")
-            out_bvh_fp = os.path.join(out_dir, f"{stem}__OUT.bvh")
+            stem = f"{_safe_name(src_rel)}__TO__{_safe_name(tgt_rel)}"
+            out_bvh_fp = os.path.join(bvh_out_dir, f"{stem}.bvh")
             if args.overwrite or not os.path.exists(out_bvh_fp):
-                bvh.save(src_motion, src_bvh_fp)
-                bvh.save(tgt_motion, tgt_bvh_fp)
                 bvh.save(out_motion, out_bvh_fp)
             dt = time.time() - t0
             print(f"[{idx}] OK  {src_rel} -> {tgt_rel}  ({dt:.2f}s)")
-            
-            # out 파일을 tgt 폴더에 복사하기.
-            tgt_dir = os.path.join(out_dir, "tgt")
-            os.makedirs(tgt_dir, exist_ok=True)
-            tgt_fp = os.path.join(tgt_dir, f"{stem}__TGT.bvh")
-            if not os.path.exists(tgt_fp):
-                import shutil
-                if os.path.exists(out_bvh_fp):
-                    shutil.copy(out_bvh_fp, tgt_fp)
         except Exception as e:
             import traceback
             status, msg = "FAIL", repr(e)
