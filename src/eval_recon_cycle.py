@@ -24,7 +24,7 @@ Usage (run per fold: the fold's model on the fold's test pairs):
       --model_epoch 260803_cfg_VT_fold0 \
       --data_dir "Trueboness_processed_byVT/processed/" \
       --pairs_txt truebones_vt_groups_fold0_test.txt \
-      --out_csv ../result/260803_cfg_VT_fold0/test/recon_cycle.csv
+      --out_csv result/260803_cfg_VT_fold0/test/recon_cycle.csv
 """
 import argparse
 import csv

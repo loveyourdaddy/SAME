@@ -18,6 +18,9 @@ Metrics - OUT vs SOURCE (from BVH; source is the real input, not a fake GT):
                            (Motion2Motion 'freq. align'; higher better).
   contact_consistency [%]  How well OUT preserves the SOURCE ground-contact timing
                            (Motion2Motion 'contact con.'; higher better).
+  root_traj_err       [bl] Root-path deviation vs the source, each shifted to the
+                           origin and divided by its own bbox diagonal (body-length
+                           units), so different species compare fairly. Lower better.
 
 Metrics - model-based, merged from recon_cycle.csv (src/eval_recon_cycle.py):
   recon_mpjpe/recon_rot   [cm]/[deg]  reconstruction A->A error (per unique source)
@@ -31,10 +34,10 @@ Usage:
   # 1) produce OUT bvh:            python src/same/test.py ...
   # 2) recon/cycle (model-based):  python src/eval_recon_cycle.py --out_csv <result_dir>/recon_cycle.csv ...
   # 3) score (merges recon_cycle.csv):
-  python metric/metric.py \
-      --result_dir result/260803_cfg_VT_fold0/test \
-      --pairs_txt  data/Trueboness_processed_byVT/processed/truebones_vt_groups_fold0_test.txt \
-      --src_dir    data/Trueboness_processed_byVT/augmented
+python metric/metric.py \
+    --result_dir result/260803_cfg_VT_fold0/test \
+    --pairs_txt  data/Trueboness_processed_byVT/processed/truebones_vt_groups_fold0_test.txt \
+    --src_dir    data/Trueboness_processed_byVT/augmented
 """
 
 import argparse
@@ -131,6 +134,37 @@ def compute_contact_consistency(out_pos: np.ndarray, src_pos: np.ndarray = None)
     c_out = _contact_signal(out_pos[:T])
     c_src = _contact_signal(src_pos[:T])
     return float((1.0 - np.abs(c_src - c_out).mean()) * 100.0)
+
+
+def _body_scale(pos: np.ndarray) -> float:
+    """Character size = bbox diagonal of the (root-relative) rest skeleton.
+
+    Uses frame 0, joints relative to the root, so it measures body size (not the
+    travelled path) and is invariant to where the character starts. Different
+    species have very different sizes, so dividing the root path by this puts both
+    source and output in dimensionless body-length units.
+    """
+    p0 = pos[0] - pos[0, 0:1]                     # frame 0, root-relative [J,3]
+    ext = p0.max(axis=0) - p0.min(axis=0)         # bbox side lengths
+    return float(np.linalg.norm(ext) + 1e-8)      # bbox diagonal
+
+
+def compute_root_traj_err(out_pos: np.ndarray, src_pos: np.ndarray = None) -> float:
+    """Root trajectory error [body-lengths]: how far the OUTPUT root path deviates
+    from the SOURCE root path, size-normalized so different species are comparable.
+
+    Each root trajectory is shifted to start at the origin (frame-0 root removed)
+    and divided by that character's own bbox diagonal (see _body_scale), giving a
+    dimensionless path in body-lengths. Error = mean over frames of the 3D
+    distance between the two normalized root paths. Lower is better (0 = same
+    relative path). Needs the source; nan if unavailable.
+    """
+    if src_pos is None or len(out_pos) < 2 or len(src_pos) < 2:
+        return float("nan")
+    T = min(len(out_pos), len(src_pos))
+    ts = (src_pos[:T, 0] - src_pos[0, 0]) / _body_scale(src_pos)   # [T,3] body-lengths
+    to = (out_pos[:T, 0] - out_pos[0, 0]) / _body_scale(out_pos)
+    return float(np.linalg.norm(ts - to, axis=-1).mean())
 
 
 # ------------------------------ No-GT metrics ------------------------
@@ -281,6 +315,7 @@ def evaluate_pair(out_bvh: str, src_bvh: str = None) -> dict:
     # source-vs-output metrics (nan if no source)
     metrics["freq_alignment"] = compute_freq_alignment(out_pos, src_pos)
     metrics["contact_consistency"] = compute_contact_consistency(out_pos, src_pos)
+    metrics["root_traj_err"] = compute_root_traj_err(out_pos, src_pos)
 
     return metrics
 
@@ -435,13 +470,14 @@ def find_pairs(result_dir: str, src_dir: str = None):
 # ------------------------------- main --------------------------------
 
 OUT_KEYS   = ["jerk", "foot_skating", "ground_pen"]     # out-only, from BVH
-SRC_KEYS   = ["freq_alignment", "contact_consistency"]  # out-vs-source, from BVH
+SRC_KEYS   = ["freq_alignment", "contact_consistency", "root_traj_err"]  # out-vs-source, from BVH
 MODEL_KEYS = ["recon_mpjpe", "recon_rot", "cycle_mpjpe", "cycle_rot"]  # merged from recon_cycle.csv
 ALL_KEYS   = OUT_KEYS + SRC_KEYS + MODEL_KEYS
 UNITS      = {
     "jerk": "cm/s^3", "foot_skating": "cm", "ground_pen": "cm",
     "freq_alignment": "%",
     "contact_consistency": "%",
+    "root_traj_err": "bl",
     "recon_mpjpe": "cm", "recon_rot": "deg",
     "cycle_mpjpe": "cm", "cycle_rot": "deg",
 }
@@ -594,7 +630,8 @@ def main():
         out_str = (f"jerk={m['jerk']:.2f}  fs={m['foot_skating']:.4f}cm  "
                    f"gp={m['ground_pen']:.4f}cm")
         src_str = (f"freq_align={_pct(m,'freq_alignment')} "
-                   f"contact_con={_pct(m,'contact_consistency')}")
+                   f"contact_con={_pct(m,'contact_consistency')} "
+                   f"root_traj={_fmt(m.get('root_traj_err'))}bl")
         rc_str = (f"recon={_fmt(m.get('recon_mpjpe'))}cm/{_fmt(m.get('recon_rot'))}deg  "
                   f"cycle={_fmt(m.get('cycle_mpjpe'))}cm/{_fmt(m.get('cycle_rot'))}deg")
         print(f"  [{i:03d}] {label}")
