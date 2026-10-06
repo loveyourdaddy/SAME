@@ -63,6 +63,7 @@ from fairmotion.data import bvh  # noqa: E402
 
 FPS: float = 30.0
 CONTACT_H_CM: float = 5.0   # soft contact height threshold [cm]
+FOOTLESS_SPECIES = ["Anaconda", "KingCobra"]   # limbless: foot_skating not meaningful
 FREQ_MIN_HZ: float = 1.0    # freq_alignment low cutoff [Hz]; drops the
                             # fundamental, which is inseparable from drift here
 
@@ -198,13 +199,22 @@ def compute_jerk(pos: np.ndarray, fps: float = FPS) -> float:
     return float(np.linalg.norm(j3, axis=-1).mean())
 
 
-def compute_foot_skating(pos: np.ndarray, H: float = CONTACT_H_CM) -> float:
+def compute_foot_skating(pos: np.ndarray, H: float = CONTACT_H_CM,
+                         species: str = None, footless=None) -> float:
     """
     Foot sliding metric [cm].
     All joints contribute weighted by soft contact probability:
       contact(h) = clamp(2 - 2^(h/H), 0, 1)
     Ref: Mode-Adaptive Neural Networks for Quadruped Motion Control.
+
+    species  : species of the skeleton `pos` is on (the OUTPUT / target). If it is
+               limbless the metric is undefined - such a body slides along the
+               ground by design - and nan is returned.
+    footless : limbless species names (default FOOTLESS_SPECIES).
     """
+    if species is not None and species in (
+            FOOTLESS_SPECIES if footless is None else footless):
+        return float("nan")
     if len(pos) < 2:
         return float("nan")
     vel = np.linalg.norm(pos[1:] - pos[:-1], axis=-1)      # [T-1, J]
@@ -280,7 +290,8 @@ def compute_freq_alignment(
 
 # ------------------------- Per-pair evaluation -----------------------
 
-def evaluate_pair(out_bvh: str, src_bvh: str = None) -> dict:
+def evaluate_pair(out_bvh: str, src_bvh: str = None,
+                  species: str = None, footless=None) -> dict:
     """
     Compute the BVH-only metrics for one retarget pair.
 
@@ -309,7 +320,8 @@ def evaluate_pair(out_bvh: str, src_bvh: str = None) -> dict:
 
     # out-only metrics (always computed)
     metrics["jerk"]           = compute_jerk(out_pos)
-    metrics["foot_skating"]   = compute_foot_skating(out_pos)
+    metrics["foot_skating"]   = compute_foot_skating(
+        out_pos, species=species, footless=footless)
     metrics["ground_pen"]     = compute_ground_pen(out_pos)
 
     # source-vs-output metrics (nan if no source)
@@ -483,9 +495,6 @@ UNITS      = {
 }
 
 
-FOOTLESS_SPECIES = ["Anaconda", "KingCobra"]   # limbless: foot_skating not meaningful
-
-
 def _target_species(out_bvh: str, tgt_rel: str = "") -> str:
     """Species of the OUTPUT skeleton: the folder of tgt_rel, else parsed from the
     '<Src>__TO__<TgtSpecies>__<TgtAction>' file name."""
@@ -627,16 +636,14 @@ def main():
             continue
 
         try:
-            m = evaluate_pair(out_bvh, src_bvh)
+            # compute_foot_skating returns nan for a limbless OUTPUT skeleton
+            species = _target_species(out_bvh, tgt_rel)
+            m = evaluate_pair(out_bvh, src_bvh, species=species, footless=footless)
         except Exception as exc:
             print(f"  [{i:03d}] ERROR: {label} -- {exc}")
             continue
 
-        # foot_skating assumes planted contacts stay still; a limbless body slides
-        # along the ground by design, so skip it when the OUTPUT skeleton is one.
-        if _target_species(out_bvh, tgt_rel) in footless:
-            m["foot_skating"] = float("nan")
-            n_footless += 1
+        n_footless += species in footless
 
         # merge model-based recon / cycle from recon_cycle.csv
         if src_rel in recon_by_src:
