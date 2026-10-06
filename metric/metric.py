@@ -483,6 +483,20 @@ UNITS      = {
 }
 
 
+FOOTLESS_SPECIES = ["Anaconda", "KingCobra"]   # limbless: foot_skating not meaningful
+
+
+def _target_species(out_bvh: str, tgt_rel: str = "") -> str:
+    """Species of the OUTPUT skeleton: the folder of tgt_rel, else parsed from the
+    '<Src>__TO__<TgtSpecies>__<TgtAction>' file name."""
+    if tgt_rel and tgt_rel != "?":
+        return tgt_rel.replace("\\", "/").split("/")[0]
+    stem = os.path.basename(out_bvh)
+    if "__TO__" not in stem:
+        return ""
+    return stem.split("__TO__", 1)[1].split("__", 1)[0]
+
+
 def load_recon_cycle(result_dir):
     """Read recon_cycle.csv (from eval_recon_cycle.py) if present in result_dir.
 
@@ -535,6 +549,9 @@ def main():
                              "Dataset bvh dir, matched by src_rel. Both metrics are "
                              "scale-invariant, so units don't matter. If omitted with "
                              "--pairs_txt, defaults to the dataset bvh next to it.")
+    parser.add_argument("--footless", type=str, nargs="*", default=FOOTLESS_SPECIES,
+                        help="Target species excluded from foot_skating (limbless "
+                             "bodies slide by design). Pass with no names to disable.")
     parser.add_argument("--out_csv",    type=str, default=None,
                         help="Output CSV (default: <result_dir>/metrics.csv)")
     parser.add_argument("--fps",       type=float, default=FPS)
@@ -600,6 +617,9 @@ def main():
         v = mm.get(key)
         return f"{v:.2f}%" if (v is not None and not np.isnan(v)) else "n/a"
 
+    footless = set(args.footless)
+    n_footless = 0
+
     for i, (out_bvh, src_bvh, src_rel, tgt_rel) in enumerate(pairs):
         label = f"{src_rel} -> {tgt_rel}" if tgt_rel else src_rel
         if not os.path.exists(out_bvh):
@@ -611,6 +631,12 @@ def main():
         except Exception as exc:
             print(f"  [{i:03d}] ERROR: {label} -- {exc}")
             continue
+
+        # foot_skating assumes planted contacts stay still; a limbless body slides
+        # along the ground by design, so skip it when the OUTPUT skeleton is one.
+        if _target_species(out_bvh, tgt_rel) in footless:
+            m["foot_skating"] = float("nan")
+            n_footless += 1
 
         # merge model-based recon / cycle from recon_cycle.csv
         if src_rel in recon_by_src:
@@ -627,7 +653,7 @@ def main():
             if v is not None and not (isinstance(v, float) and np.isnan(v)):
                 agg[k].append(v)
 
-        out_str = (f"jerk={m['jerk']:.2f}  fs={m['foot_skating']:.4f}cm  "
+        out_str = (f"jerk={m['jerk']:.2f}  fs={_fmt(m['foot_skating'])}cm  "
                    f"gp={m['ground_pen']:.4f}cm")
         src_str = (f"freq_align={_pct(m,'freq_alignment')} "
                    f"contact_con={_pct(m,'contact_consistency')} "
@@ -643,6 +669,10 @@ def main():
     # source once per pair it appears in); cycle stays per-pair.
     agg["recon_mpjpe"] = [v[0] for v in recon_by_src.values() if v[0] is not None]
     agg["recon_rot"]   = [v[1] for v in recon_by_src.values() if v[1] is not None]
+
+    if n_footless:
+        print(f"\n[metric] foot_skating skipped for {n_footless} pairs with a "
+              f"limbless target ({', '.join(sorted(footless))})")
 
     # -- write CSV --
     fieldnames = ["idx", "label"] + ALL_KEYS
